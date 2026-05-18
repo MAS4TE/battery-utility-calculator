@@ -87,7 +87,6 @@ class EnergyCostCalculator:
         self.wholesale_market_prices = wholesale_market_prices.copy()
         self.solar_generation = solar_generation.copy()
         self.demand = demand.copy()
-        self.storage_use_cases = storage_use_cases
         self.hours_per_timestep = hours_per_timestep
         self.charge_efficiency = self.storage.charge_efficiency
         self.discharge_efficiency = self.storage.discharge_efficiency
@@ -109,6 +108,9 @@ class EnergyCostCalculator:
         self.goal = goal
         self.discharge_penalty_per_kwh = discharge_penalty_per_kwh
         self.cycle_cost_per_kwh = cycle_cost_per_kwh
+
+        # TODO: don't allow supplier use-case if zone != 'local'
+        self.storage_use_cases = storage_use_cases
 
         if not self.eeg_eligible:
             self.eeg_prices = self.eeg_prices * 0
