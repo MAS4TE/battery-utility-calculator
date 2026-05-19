@@ -47,13 +47,14 @@ class EnergyCostCalculator:
 
         Args:
             storage (Storage) | None: The available storage. None if no storage is available.
-            demand (pd.Series): The demand timeseries for the optimization. Values should be in kW. Index has to be pd.DateTimeIndex.
-            solar_generation (pd.Series): The solar generation data for the optimization. Values should be in kW. Index has to be pd.DateTimeIndex.
+            demand (pd.Series): Demand in kW per timestep; converted internally to kWh per timestep using hours_per_timestep.
+            solar_generation (pd.Series): PV generation in kW per timestep; converted internally to kWh per timestep.
+            All model flow variables and storage_level use kWh per timestep.
             supplier_prices (pd.Series): The grid prices for the optimization. Values should be in EUR per kWh. Index has to be pd.DateTimeIndex.
             eeg_prices (pd.Series): The EEG prices for the optimization. Values should be in EUR per kWh. Index has to be pd.DateTimeIndex.
             community_market_prices (pd.Series): The community market prices for the optimization. Values should be in EUR per kWh. Index has to be pd.DateTimeIndex.
             wholesale_market_prices (pd.Series): The wholesale market prices for the optimization. Values should be in EUR per kWh. Index has to be pd.DateTimeIndex.
-            hours_per_timestep (int | float): Hours per timesteps, e. g. 0.25 equals quarter hour.
+            hours_per_timestep (int | float): Duration of each timestep in hours (e.g. 0.25 for 15 minutes). Used to convert kW inputs to kWh and to cap storage charge/discharge energy per step.
             storage_use_cases (list[str]): The use cases for energy storage. Allowed values are "eeg", "wholesale", "community", "home"
             wholesale_fee (float): Percentage of earned wholesale money that has to be given away (0.0 to 1.0). Default is 0.3.
             cycle_cost_per_kwh (float): Optional degradation cost per discharged kWh in EUR.
@@ -147,6 +148,10 @@ class EnergyCostCalculator:
 
             series.index = new_index
             setattr(self, name, series)
+
+        h = self.hours_per_timestep
+        self.demand = self.demand * h
+        self.solar_generation = self.solar_generation * h
 
     def set_model_variables(self):
         log.info("Setting up model variables...")
@@ -320,7 +325,7 @@ class EnergyCostCalculator:
             self.timesteps, rule=restrict_solar_gen
         )
 
-        # energy flow TO storage must be smaller than c_rate * hours_per_timestep
+        # energy flow TO storage (kWh per timestep) must be <= max charge energy per step
         def restrict_storage_charge(model, timestep):
             return (
                 sum(
@@ -336,7 +341,7 @@ class EnergyCostCalculator:
             self.timesteps, rule=restrict_storage_charge
         )
 
-        # energy flow FROM storage must be smaller than c_rate * hours_per_timestep
+        # energy flow FROM storage (kWh per timestep) must be <= max discharge energy per step
         def restrict_storage_discharge(model, timestep):
             return (
                 +model.storage_to_eeg[timestep]
@@ -570,25 +575,21 @@ class EnergyCostCalculator:
             sum(
                 self._get_value(self.model.storage_to_community[timestep], use_values)
                 * self.community_market_prices.loc[timestep]
-                * self.hours_per_timestep
                 for timestep in self.timesteps
             )
             + sum(
                 self._get_value(self.model.pv_to_community[timestep], use_values)
                 * self.community_market_prices.loc[timestep]
-                * self.hours_per_timestep
                 for timestep in self.timesteps
             )
             - sum(
                 self._get_value(self.model.community_to_storage[timestep], use_values)
                 * self.community_market_prices.loc[timestep]
-                * self.hours_per_timestep
                 for timestep in self.timesteps
             )
             - sum(
                 self._get_value(self.model.community_to_home[timestep], use_values)
                 * self.community_market_prices.loc[timestep]
-                * self.hours_per_timestep
                 for timestep in self.timesteps
             )
         )
@@ -597,12 +598,10 @@ class EnergyCostCalculator:
         return -(1 - epsilon) * sum(
             self._get_value(self.model.supplier_to_storage[timestep], use_values)
             * self.supplier_prices.loc[timestep]
-            * self.hours_per_timestep
             for timestep in self.timesteps
         ) - sum(
             self._get_value(self.model.supplier_to_home[timestep], use_values)
             * self.supplier_prices.loc[timestep]
-            * self.hours_per_timestep
             for timestep in self.timesteps
         )
 
@@ -610,12 +609,10 @@ class EnergyCostCalculator:
         return (1 - epsilon) * sum(
             self._get_value(self.model.storage_to_eeg[timestep], use_values)
             * self.eeg_prices.loc[timestep]
-            * self.hours_per_timestep
             for timestep in self.timesteps
         ) + sum(
             self._get_value(self.model.pv_to_eeg[timestep], use_values)
             * self.eeg_prices.loc[timestep]
-            * self.hours_per_timestep
             for timestep in self.timesteps
         )
 
@@ -623,19 +620,16 @@ class EnergyCostCalculator:
         wholesale_earnings = sum(
             self._get_value(self.model.storage_to_wholesale[timestep], use_values)
             * self.wholesale_market_prices.loc[timestep]
-            * self.hours_per_timestep
             for timestep in self.timesteps
         )
         wholesale_earnings += sum(
             self._get_value(self.model.pv_to_wholesale[timestep], use_values)
             * self.wholesale_market_prices.loc[timestep]
-            * self.hours_per_timestep
             for timestep in self.timesteps
         )
         wholesale_costs = sum(
             self._get_value(self.model.wholesale_to_storage[timestep], use_values)
             * self.wholesale_market_prices.loc[timestep]
-            * self.hours_per_timestep
             for timestep in self.timesteps
         )
         return (wholesale_earnings - wholesale_costs) * (1 - self.wholesale_fee)
@@ -648,9 +642,7 @@ class EnergyCostCalculator:
             + self._get_value(self.model.storage_to_home[timestep], use_values)
             for timestep in self.timesteps
         )
-        return (
-            self.discharge_penalty_per_kwh * total_discharge * self.hours_per_timestep
-        )
+        return self.discharge_penalty_per_kwh * total_discharge
 
     def calculate_cycle_cost_penalty(self, use_values=False):
         total_discharge = sum(
@@ -660,7 +652,7 @@ class EnergyCostCalculator:
             + self._get_value(self.model.storage_to_home[timestep], use_values)
             for timestep in self.timesteps
         )
-        return self.cycle_cost_per_kwh * total_discharge * self.hours_per_timestep
+        return self.cycle_cost_per_kwh * total_discharge
 
     def set_max_green_energy_objective(self):
         """Set objective to maximize PV self-consumption.
@@ -673,16 +665,13 @@ class EnergyCostCalculator:
         """
         log.info("Setting up green-energy objective (maximize PV self-consumption)...")
 
-        # maximize direct PV consumption
-        expr = sum(
-            self.model.pv_to_home[timestep] * self.hours_per_timestep
-            for timestep in self.timesteps
-        )
+        # maximize direct PV consumption (kWh per timestep)
+        expr = sum(self.model.pv_to_home[timestep] for timestep in self.timesteps)
 
         # include PV charged to storage for later home use when 'home' use-case exists
         if "home" in self.storage_use_cases:
             expr = expr + sum(
-                self.model.pv_to_storage[timestep, "home"] * self.hours_per_timestep
+                self.model.pv_to_storage[timestep, "home"]
                 for timestep in self.timesteps
             )
 
@@ -942,12 +931,12 @@ class EnergyCostCalculator:
             raise ValueError("Model not optimized yet - run optimize() first!")
 
         energy_flows = self.get_energy_flows()
-        timestep_energy = float(self.hours_per_timestep)
+        h = float(self.hours_per_timestep)
 
         def col_energy_sum(column: str) -> float:
             if column not in energy_flows.columns:
                 return 0.0
-            return float(energy_flows[column].sum() * timestep_energy)
+            return float(energy_flows[column].sum())
 
         charged_by_source_kwh = {
             "pv": (
@@ -973,7 +962,7 @@ class EnergyCostCalculator:
         max_discharge_kwh = (
             float(self.storage.c_rate)
             * float(self.storage.volume)
-            * timestep_energy
+            * h
             * len(self.timesteps)
         )
 
@@ -1249,7 +1238,7 @@ class EnergyCostCalculator:
         )
 
         df = df.drop(columns=[col for col in df.columns if (df[col] == 0).all()])
-        long = df.melt(id_vars=[df.columns[0]], var_name="Use case", value_name="kW")
+        long = df.melt(id_vars=[df.columns[0]], var_name="Use case", value_name="kWh")
         fig = px.line(long, x="t", y="kW", color="Use case", title="Charge / Discharge")
 
         if show:

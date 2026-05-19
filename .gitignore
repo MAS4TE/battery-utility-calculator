@@ -9,7 +9,8 @@ __pycache__/
 *.egg-info/
 *.swp
 
-/venv/
+/.venv/
+.venv/
 /env/
 
 /test_data/

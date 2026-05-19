@@ -12,6 +12,7 @@ from battery_utility_calculator.energy_costs_calculator import (
     Storage,
 )
 
+idx_2 = pd.date_range("2025-01-01", freq="h", periods=2)
 idx_3 = pd.date_range("2025-01-01", freq="h", periods=3)
 idx_4 = pd.date_range("2025-01-01", freq="h", periods=4)
 idx_5 = pd.date_range("2025-01-01", freq="h", periods=5)
@@ -358,6 +359,54 @@ def test_ECC_hours_per_timestep():
     )
     costs = calculator.optimize(solver="highs")
     assert np.isclose(costs, -1)
+
+
+def test_ECC_hours_per_timestep_storage_shift():
+    # 1 kW PV and 1 kW demand -> 0.25 kWh per 15 min step; shift via storage at zero cost
+    calculator = EnergyCostCalculator(
+        storage=Storage(
+            id=0, c_rate=1, volume=1, charge_efficiency=1, discharge_efficiency=1
+        ),
+        eeg_prices=pd.Series([0, 0], index=idx_2),
+        wholesale_market_prices=pd.Series([0, 0], index=idx_2),
+        community_market_prices=pd.Series([0, 0], index=idx_2),
+        supplier_prices=pd.Series([100, 10], index=idx_2),
+        solar_generation=pd.Series([1, 0], index=idx_2),
+        demand=pd.Series([0, 1], index=idx_2),
+        hours_per_timestep=0.25,
+        allow_pv_to_wholesale=False,
+        storage_use_cases=["home"],
+    )
+    costs = calculator.optimize(solver="appsi_highs")
+    flows = calculator.get_energy_flows()
+    soc = calculator.get_storage_soc_timeseries_df()
+
+    assert np.isclose(costs, 0.0, atol=1e-6)
+    assert np.isclose(flows["pv_to_storage_for_home"].iloc[0], 0.25)
+    assert np.isclose(flows["storage_to_home"].iloc[1], 0.25)
+    assert np.isclose(soc["soc_home"].iloc[0], 0.25)
+
+
+def test_ECC_hours_per_timestep_c_rate_energy_limit():
+    calculator = EnergyCostCalculator(
+        storage=Storage(
+            id=0, c_rate=1, volume=1, charge_efficiency=1, discharge_efficiency=1
+        ),
+        eeg_prices=pd.Series([0, 0, 0], index=idx_3),
+        wholesale_market_prices=pd.Series([0, 0, 0], index=idx_3),
+        community_market_prices=pd.Series([0, 0, 0], index=idx_3),
+        supplier_prices=pd.Series([0, 100, 100], index=idx_3),
+        solar_generation=pd.Series([2, 0, 0], index=idx_3),
+        demand=pd.Series([0, 0, 1], index=idx_3),
+        hours_per_timestep=0.25,
+        allow_pv_to_wholesale=False,
+        storage_use_cases=["home"],
+    )
+    calculator.optimize(solver="appsi_highs")
+    flows = calculator.get_energy_flows()
+    max_charge_kwh = float(flows["pv_to_storage_for_home"].iloc[0])
+    assert max_charge_kwh <= 0.25 + 1e-6
+    assert max_charge_kwh > 0.0
 
 
 def test_ECC_soc_start():
