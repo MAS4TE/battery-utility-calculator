@@ -15,11 +15,32 @@ log = logging.getLogger("battery_utility")
 log.setLevel(logging.WARNING)
 
 epsilon = 1e-4
-DEFAULT_GRID_FEE_BY_ZONE = {
-    "local": 0.0,
-    "medium_voltage": 0.01,
-    "high_voltage": 0.02,
-    "extra_high_voltage": 0.03,
+# Nested dict of grid fees for connections between cities
+DEFAULT_GRID_FEE_BETWEEN_CITIES = {
+    "liege": {
+        "liege": 0.0,
+        "heerlen": 0.01,
+        "aachen": 0.015,
+        "juelich": 0.02,
+    },
+    "heerlen": {
+        "liege": 0.01,
+        "heerlen": 0.0,
+        "aachen": 0.012,
+        "juelich": 0.018,
+    },
+    "aachen": {
+        "liege": 0.015,
+        "heerlen": 0.012,
+        "aachen": 0.0,
+        "juelich": 0.01,
+    },
+    "juelich": {
+        "liege": 0.02,
+        "heerlen": 0.018,
+        "aachen": 0.01,
+        "juelich": 0.0,
+    },
 }
 
 
@@ -44,8 +65,11 @@ class EnergyCostCalculator:
         allow_wholesale_to_storage: bool = True,
         allow_storage_to_wholesale: bool = True,
         wholesale_fee: float = 0.3,
-        grid_zone: str = "local",
-        grid_fee_by_zone: dict[str, float] | None = None,
+        my_city: str = "aachen",
+        grid_fee_between_cities: dict[str, dict[str, float]]
+        | None = DEFAULT_GRID_FEE_BETWEEN_CITIES,
+        storage_city: str | None = None,
+        community_market_city: str | None = None,
         eeg_eligible: bool = True,
         goal: str = "max_cashflow",
         discharge_penalty_per_kwh: float = 1e-6,
@@ -64,8 +88,10 @@ class EnergyCostCalculator:
             hours_per_timestep (int | float): Hours per timesteps, e. g. 0.25 equals quarter hour.
             storage_use_cases (list[str]): The use cases for energy storage. Allowed values are "eeg", "wholesale", "community", "home"
             wholesale_fee (float): Percentage of earned wholesale money that has to be given away (0.0 to 1.0). Default is 0.3.
-            grid_zone (str): The grid zone for the optimization. Allowed values are "local", "medium_voltage", "high_voltage", "extra_high_voltage". Default is "local".
-            grid_fee_by_zone (dict[str, float]): The grid fees for each grid zone. Default is DEFAULT_GRID_FEE_BY_ZONE.
+            my_city (str): City of the prosumer. Must be a key in ``grid_fee_between_cities``. Default is "aachen".
+            grid_fee_between_cities (dict[str, dict[str, float]]): Grid fees in EUR/kWh for energy transferred between cities. Default is DEFAULT_GRID_FEE_BETWEEN_CITIES.
+            storage_city (str | None): City where the storage is located. Defaults to ``my_city``.
+            community_city (str | None): City of the community market. Defaults to ``my_city``.
             eeg_eligible (bool): Whether the storage is eligible for EEG. Default is True.
             goal (str): The goal of the optimization. Allowed values are "max_cashflow" and "max_green_energy". Default is "max_cashflow".
             discharge_penalty_per_kwh (float): The discharge penalty per kWh in EUR. Default is 1e-6.
@@ -101,15 +127,29 @@ class EnergyCostCalculator:
         self.allow_storage_to_community = allow_storage_to_community
         self.allow_community_to_storage = allow_community_to_storage
         self.wholesale_fee = wholesale_fee
-        self.grid_zone = self._normalize_grid_zone(grid_zone)
-        self.grid_fee_by_zone = self._prepare_grid_fee_by_zone(grid_fee_by_zone)
-        self.grid_fee_per_kwh = float(self.grid_fee_by_zone[self.grid_zone])
+        self.my_city = self._normalize_city(my_city)
+        self.grid_fee_between_cities = self._prepare_grid_fee_between_cities(
+            grid_fee_between_cities
+        )
+        self.community_market_city = self._normalize_city(
+            community_market_city if community_market_city is not None else self.my_city
+        )
+        self.storage_city = self._normalize_city(
+            storage_city if storage_city is not None else self.my_city
+        )
+        self.allow_supplier_to_storage = True
+        if self.storage_city != self.my_city:
+            self.allow_supplier_to_storage = False
+            log.warning(
+                "Disabled supplier_to_storage use-case because storage_city '%s' differs from my_city '%s'.",
+                self.storage_city,
+                self.my_city,
+            )
         self.eeg_eligible = eeg_eligible
         self.goal = goal
         self.discharge_penalty_per_kwh = discharge_penalty_per_kwh
         self.cycle_cost_per_kwh = cycle_cost_per_kwh
 
-        # TODO: don't allow supplier use-case if zone != 'local'
         self.storage_use_cases = storage_use_cases
 
         if not self.eeg_eligible:
@@ -129,29 +169,49 @@ class EnergyCostCalculator:
         elif self.goal == "max_green_energy":
             self.set_max_green_energy_objective()
 
-    def _normalize_grid_zone(self, grid_zone: str) -> str:
-        if not isinstance(grid_zone, str):
-            raise TypeError("grid_zone has to be a string.")
-        normalized = grid_zone.strip().lower()
-        if normalized not in DEFAULT_GRID_FEE_BY_ZONE:
-            msg = f"Unknown grid_zone '{grid_zone}'. Allowed values: {sorted(DEFAULT_GRID_FEE_BY_ZONE.keys())}"
+    def _normalize_city(self, city: str) -> str:
+        if not isinstance(city, str):
+            raise TypeError("city names have to be strings.")
+
+        normalized = city.strip().lower()
+
+        known_cities = DEFAULT_GRID_FEE_BETWEEN_CITIES.keys()
+        if normalized not in known_cities:
+            msg = f"Unknown city '{city}'. Allowed values: {sorted(known_cities)}"
             raise ValueError(msg)
+
         return normalized
 
-    def _prepare_grid_fee_by_zone(
+    def _prepare_grid_fee_between_cities(
         self,
-        grid_fee_by_zone: dict[str, float] | None,
-    ) -> dict[str, float]:
-        fees = DEFAULT_GRID_FEE_BY_ZONE.copy()
-        if grid_fee_by_zone is None:
-            return fees
-        if not isinstance(grid_fee_by_zone, dict):
-            raise TypeError("grid_fee_by_zone has to be a dict[str, float] or None.")
+        grid_fee_between_cities: dict[str, dict[str, float]] | None,
+    ) -> dict[str, dict[str, float]]:
+        normalized_fees = {
+            from_city: row.copy()
+            for from_city, row in DEFAULT_GRID_FEE_BETWEEN_CITIES.items()
+        }
 
-        for key, value in grid_fee_by_zone.items():
-            normalized_key = self._normalize_grid_zone(key)
-            fees[normalized_key] = float(value)
-        return fees
+        if grid_fee_between_cities is None:
+            return normalized_fees
+        if not isinstance(grid_fee_between_cities, dict):
+            raise TypeError(
+                "grid_fee_between_cities has to be a dict[str, dict[str, float]] or None."
+            )
+
+        for from_city, to_fees in grid_fee_between_cities.items():
+            normalized_from = self._normalize_city(from_city)
+            if not isinstance(to_fees, dict):
+                raise TypeError(
+                    f"grid_fee_between_cities['{from_city}'] has to be a dict[str, float]."
+                )
+            for to_city, value in to_fees.items():
+                normalized_to = self._normalize_city(to_city)
+                normalized_fees[normalized_from][normalized_to] = float(value)
+
+        return normalized_fees
+
+    def _grid_fee_rate(self, from_city: str, to_city: str) -> float:
+        return float(self.grid_fee_between_cities[from_city][to_city])
 
     def __check_prepare_timeseries_indices__(self) -> None:
         """Check if all timeseries indices are valid."""
@@ -316,9 +376,14 @@ class EnergyCostCalculator:
             )
 
         # charging storage from supplier
-        self.model.supplier_to_storage = pyo.Var(
-            self.timesteps, domain=pyo.NonNegativeReals
-        )
+        if self.allow_supplier_to_storage:
+            self.model.supplier_to_storage = pyo.Var(
+                self.timesteps, domain=pyo.NonNegativeReals
+            )
+        else:
+            self.model.supplier_to_storage = pyo.Var(
+                self.timesteps, domain=pyo.NonNegativeReals, bounds=(0, 0)
+            )
 
         # buying energy from supplier
         self.model.supplier_to_home = pyo.Var(
@@ -680,29 +745,43 @@ class EnergyCostCalculator:
         return (wholesale_earnings - wholesale_costs) * (1 - self.wholesale_fee)
 
     def calculate_grid_fee_cashflow(self, use_values=False):
-        if self.grid_fee_per_kwh <= 0:
-            return 0.0
-
-        charge_flows = sum(
+        pv_charge = sum(
             self._get_value(self.model.pv_to_storage[timestep, use], use_values)
             for timestep in self.timesteps
             for use in self.storage_use_cases
             if use != "wholesale"
-        ) + sum(
+        )
+        supplier_charge = sum(
             self._get_value(self.model.supplier_to_storage[timestep], use_values)
-            + self._get_value(self.model.community_to_storage[timestep], use_values)
+            for timestep in self.timesteps
+        )
+        community_charge = sum(
+            self._get_value(self.model.community_to_storage[timestep], use_values)
+            for timestep in self.timesteps
+        )
+        storage_to_community = sum(
+            self._get_value(self.model.storage_to_community[timestep], use_values)
+            for timestep in self.timesteps
+        )
+        storage_to_home = sum(
+            self._get_value(self.model.storage_to_home[timestep], use_values)
             for timestep in self.timesteps
         )
 
-        discharge_flows = sum(
-            self._get_value(self.model.storage_to_eeg[timestep], use_values)
-            + self._get_value(self.model.storage_to_community[timestep], use_values)
-            + self._get_value(self.model.storage_to_home[timestep], use_values)
-            for timestep in self.timesteps
+        fee_energy = (
+            self._grid_fee_rate(self.my_city, self.storage_city) * pv_charge
+            + self._grid_fee_rate(self.my_city, self.storage_city) * supplier_charge
+            + self._grid_fee_rate(self.community_market_city, self.storage_city)
+            * community_charge
+            + self._grid_fee_rate(self.storage_city, self.community_market_city)
+            * storage_to_community
+            + self._grid_fee_rate(self.storage_city, self.my_city) * storage_to_home
         )
 
-        total_fee_energy = (charge_flows + discharge_flows) * self.hours_per_timestep
-        return -self.grid_fee_per_kwh * total_fee_energy
+        if isinstance(fee_energy, (int, float)) and fee_energy <= 0:
+            return 0.0
+
+        return -fee_energy * self.hours_per_timestep
 
     def calculate_discharge_penalty(self, use_values=False):
         total_discharge = sum(

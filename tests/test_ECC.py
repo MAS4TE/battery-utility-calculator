@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MIT
 
+import logging
+
 import numpy as np
 import pandas as pd
 
@@ -539,7 +541,8 @@ def test_ECC_grid_fees_reduce_non_wholesale_cashflow():
         solar_generation=pd.Series([1, 0, 0], index=idx_3),
         demand=pd.Series([0, 0, 0], index=idx_3),
         allow_pv_to_wholesale=False,
-        grid_zone="local",
+        my_city="aachen",
+        storage_city="aachen",
     )
     base_costs = base_calc.optimize(solver="appsi_highs")
 
@@ -550,16 +553,14 @@ def test_ECC_grid_fees_reduce_non_wholesale_cashflow():
         eeg_prices=pd.Series([0, 0, 0], index=idx_3),
         wholesale_market_prices=pd.Series([0, 0, 0], index=idx_3),
         community_market_prices=pd.Series([0, 0, 0], index=idx_3),
-        supplier_prices=pd.Series([1, 1, 1], index=idx_3),
-        solar_generation=pd.Series([1, 0, 0], index=idx_3),
+        supplier_prices=pd.Series([0, 1, 1], index=idx_3),
+        solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([0, 0, 1], index=idx_3),
         allow_pv_to_wholesale=False,
-        grid_zone="high_voltage",
-        grid_fee_by_zone={
-            "local": 0.0,
-            "medium_voltage": 0.0,
-            "high_voltage": 0.05,
-            "extra_high_voltage": 0.0,
+        my_city="aachen",
+        storage_city="aachen",
+        grid_fee_between_cities={
+            "aachen": {"aachen": 0.05},
         },
     )
     fee_costs = fee_calc.optimize(solver="appsi_highs")
@@ -583,15 +584,15 @@ def test_ECC_grid_fees_do_not_affect_wholesale_only_operations():
 
     no_fee = EnergyCostCalculator(
         **kwargs,
-        grid_zone="local",
-        grid_fee_by_zone={"local": 0.0},
+        my_city="aachen",
+        storage_city="aachen",
     )
     with_fee = EnergyCostCalculator(
         **kwargs,
-        grid_zone="extra_high_voltage",
-        grid_fee_by_zone={
-            "local": 0.0,
-            "extra_high_voltage": 5,
+        my_city="aachen",
+        storage_city="liege",
+        grid_fee_between_cities={
+            "aachen": {"liege": 5.0},
         },
     )
 
@@ -602,34 +603,49 @@ def test_ECC_grid_fees_do_not_affect_wholesale_only_operations():
     assert np.isclose(with_fee.get_cashflows()["grid_fees"], 0.0)
 
 
-def test_ECC_grid_zone_ordering_changes_costs():
-    fee_map = {
-        "local": 0.0,
-        "medium_voltage": 0.1,
-        "high_voltage": 0.2,
-        "extra_high_voltage": 0.3,
-    }
-    costs_by_zone = {}
-
-    for zone in [
-        "local",
-        "medium_voltage",
-        "high_voltage",
-        "extra_high_voltage",
-    ]:
+def test_ECC_grid_city_ordering_changes_costs():
+    costs_by_storage_city = {}
+    for storage_city in ["aachen", "heerlen", "liege", "juelich"]:
         calc = EnergyCostCalculator(
-            storage=Storage(id=0, c_rate=1, volume=1),
+            storage=Storage(
+                id=0, c_rate=1, volume=1, charge_efficiency=1, discharge_efficiency=1
+            ),
             eeg_prices=pd.Series([0, 0, 0], index=idx_3),
             wholesale_market_prices=pd.Series([0, 0, 0], index=idx_3),
             community_market_prices=pd.Series([0, 0, 0], index=idx_3),
-            supplier_prices=pd.Series([0, 1, 1], index=idx_3),
-            solar_generation=pd.Series([0, 0, 0], index=idx_3),
-            demand=pd.Series([1, 1, 1], index=idx_3),
-            grid_zone=zone,
-            grid_fee_by_zone=fee_map,
+            supplier_prices=pd.Series([0, 0, 0], index=idx_3),
+            solar_generation=pd.Series([1, 0, 0], index=idx_3),
+            demand=pd.Series([0, 0, 1], index=idx_3),
+            allow_pv_to_wholesale=False,
+            my_city="aachen",
+            storage_city=storage_city,
         )
-        costs_by_zone[zone] = calc.optimize(solver="appsi_highs")
+        costs_by_storage_city[storage_city] = calc.optimize(solver="appsi_highs")
 
-    assert costs_by_zone["local"] > costs_by_zone["medium_voltage"]
-    assert costs_by_zone["medium_voltage"] > costs_by_zone["high_voltage"]
-    assert costs_by_zone["high_voltage"] > costs_by_zone["extra_high_voltage"]
+    # Storage in my_city avoids any inter-city grid fees.
+    assert costs_by_storage_city["aachen"] >= costs_by_storage_city["juelich"]
+    assert costs_by_storage_city["aachen"] >= costs_by_storage_city["heerlen"]
+    assert costs_by_storage_city["aachen"] >= costs_by_storage_city["liege"]
+
+
+def test_ECC_disables_supplier_to_storage_for_non_local_supplier(caplog):
+    caplog.set_level(logging.WARNING, logger="battery_utility")
+    calc = EnergyCostCalculator(
+        storage=Storage(id=0, c_rate=1, volume=1),
+        eeg_prices=pd.Series([0, 0, 0], index=idx_3),
+        wholesale_market_prices=pd.Series([0, 0, 0], index=idx_3),
+        community_market_prices=pd.Series([0, 0, 0], index=idx_3),
+        supplier_prices=pd.Series([0, 1, 1], index=idx_3),
+        solar_generation=pd.Series([0, 0, 0], index=idx_3),
+        demand=pd.Series([1, 1, 1], index=idx_3),
+        my_city="aachen",
+        storage_city="liege",
+    )
+    calc.optimize(solver="appsi_highs")
+    flows = calc.get_energy_flows()
+
+    assert np.allclose(flows["supplier_to_storage"], 0.0)
+    assert any(
+        "Disabled supplier_to_storage use-case because storage_city" in rec.message
+        for rec in caplog.records
+    )

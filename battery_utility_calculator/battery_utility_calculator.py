@@ -12,6 +12,33 @@ from plotly.graph_objects import Figure
 from battery_utility_calculator import EnergyCostCalculator as ECC
 from battery_utility_calculator import Storage
 
+DEFAULT_GRID_FEE_BETWEEN_CITIES = {
+    "liege": {
+        "liege": 0.0,
+        "heerlen": 0.01,
+        "aachen": 0.015,
+        "juelich": 0.02,
+    },
+    "heerlen": {
+        "liege": 0.01,
+        "heerlen": 0.0,
+        "aachen": 0.012,
+        "juelich": 0.018,
+    },
+    "aachen": {
+        "liege": 0.015,
+        "heerlen": 0.012,
+        "aachen": 0.0,
+        "juelich": 0.01,
+    },
+    "juelich": {
+        "liege": 0.02,
+        "heerlen": 0.018,
+        "aachen": 0.01,
+        "juelich": 0.0,
+    },
+}
+
 
 def calculate_storage_worth(
     baseline_storage: Storage,
@@ -23,8 +50,11 @@ def calculate_storage_worth(
     community_market_prices: pd.Series,
     wholesale_market_prices: pd.Series,
     wholesale_fee: float = 0.3,
-    grid_zone: str = "local",
-    grid_fee_by_zone: dict[str, float] | None = None,
+    my_city: str = "aachen",
+    storage_city: str | None = None,
+    grid_fee_between_cities: dict[str, dict[str, float]]
+    | None = DEFAULT_GRID_FEE_BETWEEN_CITIES,
+    community_city: str | None = None,
     hours_per_timestep: int | float = 1,
     storage_use_cases: list[str] = ["eeg", "home", "community", "wholesale"],
     allow_community_to_home: bool = False,
@@ -82,8 +112,10 @@ def calculate_storage_worth(
         community_market_prices=community_market_prices,
         wholesale_market_prices=wholesale_market_prices,
         wholesale_fee=wholesale_fee,
-        grid_zone=grid_zone,
-        grid_fee_by_zone=grid_fee_by_zone,
+        my_city=my_city,
+        storage_city=storage_city,
+        grid_fee_between_cities=grid_fee_between_cities,
+        community_market_city=community_city,
         hours_per_timestep=hours_per_timestep,
         storage_use_cases=storage_use_cases,
         allow_community_to_home=allow_community_to_home,
@@ -106,8 +138,10 @@ def calculate_storage_worth(
         community_market_prices=community_market_prices,
         wholesale_market_prices=wholesale_market_prices,
         wholesale_fee=wholesale_fee,
-        grid_zone=grid_zone,
-        grid_fee_by_zone=grid_fee_by_zone,
+        my_city=my_city,
+        storage_city=storage_city,
+        grid_fee_between_cities=grid_fee_between_cities,
+        community_market_city=community_city,
         hours_per_timestep=hours_per_timestep,
         storage_use_cases=storage_use_cases,
         allow_community_to_home=allow_community_to_home,
@@ -160,8 +194,11 @@ def calculate_multiple_storage_worth(
     community_market_prices: pd.Series,
     wholesale_market_prices: pd.Series,
     wholesale_fee: float = 0.3,
-    grid_zone: str = "local",
-    grid_fee_by_zone: dict[str, float] | None = None,
+    my_city: str = "aachen",
+    storage_city: str | None = None,
+    grid_fee_between_cities: dict[str, dict[str, float]]
+    | None = DEFAULT_GRID_FEE_BETWEEN_CITIES,
+    community_city: str | None = None,
     return_charge_timeseries: bool = False,
     return_soc_timeseries: bool = False,
     return_cashflows: bool = False,
@@ -231,8 +268,10 @@ def calculate_multiple_storage_worth(
         community_market_prices=community_market_prices,
         wholesale_market_prices=wholesale_market_prices,
         wholesale_fee=wholesale_fee,
-        grid_zone=grid_zone,
-        grid_fee_by_zone=grid_fee_by_zone,
+        my_city=my_city,
+        storage_city=storage_city,
+        grid_fee_between_cities=grid_fee_between_cities,
+        community_market_city=community_city,
         eeg_eligible=eeg_eligible,
         discharge_penalty_per_kwh=discharge_penalty_per_kwh,
         cycle_cost_per_kwh=cycle_cost_per_kwh,
@@ -293,8 +332,10 @@ def calculate_multiple_storage_worth(
             community_market_prices=community_market_prices,
             wholesale_market_prices=wholesale_market_prices,
             wholesale_fee=wholesale_fee,
-            grid_zone=grid_zone,
-            grid_fee_by_zone=grid_fee_by_zone,
+            my_city=my_city,
+            storage_city=storage_city,
+            grid_fee_between_cities=grid_fee_between_cities,
+            community_market_city=community_city,
             eeg_eligible=eeg_eligible,
             discharge_penalty_per_kwh=discharge_penalty_per_kwh,
             cycle_cost_per_kwh=cycle_cost_per_kwh,
@@ -422,26 +463,28 @@ _CASHFLOW_COMPONENT_ORDER = (
 )
 
 
-def calculate_multiple_storage_worth_by_zone(
+def calculate_multiple_storage_worth_by_city(
     baseline_storage: Storage,
     storages_to_calculate: list[Storage],
-    zones: list[str],
+    cities: list[str],
     demand: pd.Series,
     solar_generation: pd.Series,
     supplier_prices: pd.Series,
     eeg_prices: pd.Series,
     community_market_prices: pd.Series,
     wholesale_market_prices: pd.Series,
-    grid_fee_by_zone: dict[str, float] | None = None,
+    grid_fee_between_cities: dict[str, dict[str, float]]
+    | None = DEFAULT_GRID_FEE_BETWEEN_CITIES,
+    community_city: str | None = None,
     *args,
     **kwargs,
 ) -> pd.DataFrame:
-    """Calculate storage worth for multiple storages across multiple grid zones.
+    """Calculate storage worth for multiple storages across multiple cities.
 
-    Returns one row per zone and storage configuration (including baseline row).
+    Returns one row per city and storage configuration (including baseline row).
     """
     rows = []
-    for zone in zones:
+    for city in cities:
         worth_result = calculate_multiple_storage_worth(
             baseline_storage=baseline_storage,
             storages_to_calculate=storages_to_calculate,
@@ -451,8 +494,9 @@ def calculate_multiple_storage_worth_by_zone(
             eeg_prices=eeg_prices,
             community_market_prices=community_market_prices,
             wholesale_market_prices=wholesale_market_prices,
-            grid_zone=zone,
-            grid_fee_by_zone=grid_fee_by_zone,
+            my_city=city,
+            grid_fee_between_cities=grid_fee_between_cities,
+            community_city=community_city,
             *args,
             **kwargs,
         )
@@ -461,7 +505,7 @@ def calculate_multiple_storage_worth_by_zone(
             if isinstance(worth_result, dict)
             else worth_result.copy()
         )
-        worth_df["zone"] = zone
+        worth_df["city"] = city
         rows.append(worth_df)
 
     if not rows:
@@ -474,7 +518,7 @@ def calculate_multiple_storage_worth_by_zone(
                 "discharge_efficiency",
                 "costs",
                 "worth",
-                "zone",
+                "city",
             ]
         )
     return pd.concat(rows, ignore_index=True)
