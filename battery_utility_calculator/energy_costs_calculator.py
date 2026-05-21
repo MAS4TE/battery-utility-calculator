@@ -17,29 +17,29 @@ log.setLevel(logging.WARNING)
 epsilon = 1e-4
 # Nested dict of grid fees for connections between cities
 DEFAULT_GRID_FEE_BETWEEN_CITIES = {
-    "liege": {
-        "liege": 0.0,
-        "heerlen": 0.01,
-        "aachen": 0.015,
-        "juelich": 0.02,
-    },
-    "heerlen": {
-        "liege": 0.01,
-        "heerlen": 0.0,
-        "aachen": 0.012,
-        "juelich": 0.018,
+    "juelich": {
+        "juelich": 0.0,
+        "aachen": 0.01,
+        "heerlen": 0.015,
+        "liege": 0.02,
     },
     "aachen": {
-        "liege": 0.015,
-        "heerlen": 0.012,
-        "aachen": 0.0,
         "juelich": 0.01,
-    },
-    "juelich": {
+        "aachen": 0.0,
+        "heerlen": 0.015,
         "liege": 0.02,
-        "heerlen": 0.018,
+    },
+    "heerlen": {
+        "juelich": 0.015,
         "aachen": 0.01,
-        "juelich": 0.0,
+        "heerlen": 0.0,
+        "liege": 0.02,
+    },
+    "liege": {
+        "juelich": 0.02,
+        "aachen": 0.01,
+        "heerlen": 0.015,
+        "liege": 0.0,
     },
 }
 
