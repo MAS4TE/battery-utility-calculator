@@ -133,6 +133,41 @@ def test_calculate_storage_worth_cycle_cost_default_compatibility():
     assert worth_with_cycle_cost < worth_default
 
 
+def test_calculate_storage_worth_allow_pv_to_wholesale_changes_result():
+    baseline_storage = Storage(0, 1, 0, 1)
+    storage_to_calc = Storage(1, 1, 1, 1)
+
+    result_disabled = calculate_storage_worth(
+        baseline_storage=baseline_storage,
+        storage_to_calculate=storage_to_calc,
+        eeg_prices=pd.Series([0, 0, 0], index=idx),
+        wholesale_market_prices=pd.Series([10, 10, 10], index=idx),
+        community_market_prices=pd.Series([0, 0, 0], index=idx),
+        supplier_prices=pd.Series([0, 0, 0], index=idx),
+        solar_generation=pd.Series([1, 1, 1], index=idx),
+        demand=pd.Series([0, 0, 0], index=idx),
+        allow_pv_to_wholesale=False,
+        return_cashflows=True,
+        solver="appsi_highs",
+    )
+    result_enabled = calculate_storage_worth(
+        baseline_storage=baseline_storage,
+        storage_to_calculate=storage_to_calc,
+        eeg_prices=pd.Series([0, 0, 0], index=idx),
+        wholesale_market_prices=pd.Series([10, 10, 10], index=idx),
+        community_market_prices=pd.Series([0, 0, 0], index=idx),
+        supplier_prices=pd.Series([0, 0, 0], index=idx),
+        solar_generation=pd.Series([1, 1, 1], index=idx),
+        demand=pd.Series([0, 0, 0], index=idx),
+        allow_pv_to_wholesale=True,
+        return_cashflows=True,
+        solver="appsi_highs",
+    )
+
+    assert result_disabled["baseline_cashflows"]["wholesale"] == 0.0
+    assert result_enabled["baseline_cashflows"]["wholesale"] > 0.0
+
+
 def test_calculate_multiple_storage_worth():
     baseline_storage = Storage(0, 1, 0, 1)
     storages_to_calc = [Storage(0, 1, 1, 1), Storage(1, 1, 2, 1)]
@@ -230,6 +265,40 @@ def test_calculate_multiple_storage_worth_cycle_cost_is_consistent():
     assert float(with_cycle_cost.loc[2, "worth"]) < float(
         without_cycle_cost.loc[2, "worth"]
     )
+
+
+def test_calculate_multiple_storage_worth_applies_wholesale_fee_to_all_runs():
+    baseline_storage = Storage(0, 1, 0, 1)
+    storages_to_calc = [Storage(1, 1, 0, 1)]
+
+    low_fee = calculate_multiple_storage_worth(
+        baseline_storage=baseline_storage,
+        storages_to_calculate=storages_to_calc,
+        eeg_prices=pd.Series([0, 0, 0], index=idx),
+        wholesale_market_prices=pd.Series([10, 10, 10], index=idx),
+        community_market_prices=pd.Series([0, 0, 0], index=idx),
+        supplier_prices=pd.Series([0, 0, 0], index=idx),
+        solar_generation=pd.Series([1, 1, 1], index=idx),
+        demand=pd.Series([0, 0, 0], index=idx),
+        allow_pv_to_wholesale=True,
+        wholesale_fee=0.0,
+        solver="appsi_highs",
+    )
+    high_fee = calculate_multiple_storage_worth(
+        baseline_storage=baseline_storage,
+        storages_to_calculate=storages_to_calc,
+        eeg_prices=pd.Series([0, 0, 0], index=idx),
+        wholesale_market_prices=pd.Series([10, 10, 10], index=idx),
+        community_market_prices=pd.Series([0, 0, 0], index=idx),
+        supplier_prices=pd.Series([0, 0, 0], index=idx),
+        solar_generation=pd.Series([1, 1, 1], index=idx),
+        demand=pd.Series([0, 0, 0], index=idx),
+        allow_pv_to_wholesale=True,
+        wholesale_fee=0.9,
+        solver="appsi_highs",
+    )
+
+    assert float(low_fee.loc[1, "costs"]) > float(high_fee.loc[1, "costs"])
 
 
 def test_calc_bid_curve_dtypes():

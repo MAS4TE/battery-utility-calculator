@@ -79,13 +79,14 @@ class EnergyCostCalculator:
 
         Args:
             storage (Storage) | None: The available storage. None if no storage is available.
-            demand (pd.Series): The demand timeseries for the optimization. Values should be in kW. Index has to be pd.DateTimeIndex.
-            solar_generation (pd.Series): The solar generation data for the optimization. Values should be in kW. Index has to be pd.DateTimeIndex.
+            demand (pd.Series): Demand in kW per timestep; converted internally to kWh per timestep using hours_per_timestep.
+            solar_generation (pd.Series): PV generation in kW per timestep; converted internally to kWh per timestep.
+            All model flow variables and storage_level use kWh per timestep.
             supplier_prices (pd.Series): The grid prices for the optimization. Values should be in EUR per kWh. Index has to be pd.DateTimeIndex.
             eeg_prices (pd.Series): The EEG prices for the optimization. Values should be in EUR per kWh. Index has to be pd.DateTimeIndex.
             community_market_prices (dict[str, pd.Series] | None): Community market prices per city. ``None`` or an empty dict disables the community market (flows indexed by ``my_city`` at zero). Otherwise keys must be present in ``grid_fee_between_cities``. Values in EUR per kWh with pd.DateTimeIndex.
             wholesale_market_prices (pd.Series): The wholesale market prices for the optimization. Values should be in EUR per kWh. Index has to be pd.DateTimeIndex.
-            hours_per_timestep (int | float): Hours per timesteps, e. g. 0.25 equals quarter hour.
+            hours_per_timestep (int | float): Duration of each timestep in hours (e.g. 0.25 for 15 minutes). Used to convert kW inputs to kWh and to cap storage charge/discharge energy per step.
             storage_use_cases (list[str]): The use cases for energy storage. Allowed values are "eeg", "wholesale", "community", "home"
             allow_community_to_storage (bool): Import from community market into the home SOC bucket (community → storage → home).
             allow_community_market_arbitrage (bool): Import into the community SOC bucket for round-trip arbitrage (requires ``allow_storage_to_community`` to sell back).
@@ -557,7 +558,7 @@ class EnergyCostCalculator:
             self.timesteps, rule=restrict_solar_gen
         )
 
-        # energy flow TO storage must be smaller than c_rate * hours_per_timestep
+        # energy flow TO storage (kWh per timestep) must be <= max charge energy per step
         def restrict_storage_charge(model, timestep):
             community_to_storage = sum(
                 model.community_to_storage_for_home[timestep, city]
@@ -579,7 +580,7 @@ class EnergyCostCalculator:
             self.timesteps, rule=restrict_storage_charge
         )
 
-        # energy flow FROM storage must be smaller than c_rate * hours_per_timestep
+        # energy flow FROM storage (kWh per timestep) must be <= max discharge energy per step
         def restrict_storage_discharge(model, timestep):
             storage_to_community = sum(
                 model.storage_to_community[timestep, city]
@@ -887,12 +888,10 @@ class EnergyCostCalculator:
         return -(1 - epsilon) * sum(
             self.__get_value__(self.model.supplier_to_storage[timestep], use_values)
             * self.supplier_prices.loc[timestep]
-            * self.hours_per_timestep
             for timestep in self.timesteps
         ) - sum(
             self.__get_value__(self.model.supplier_to_home[timestep], use_values)
             * self.supplier_prices.loc[timestep]
-            * self.hours_per_timestep
             for timestep in self.timesteps
         )
 
@@ -900,12 +899,10 @@ class EnergyCostCalculator:
         return (1 - epsilon) * sum(
             self.__get_value__(self.model.storage_to_eeg[timestep], use_values)
             * self.eeg_prices.loc[timestep]
-            * self.hours_per_timestep
             for timestep in self.timesteps
         ) + sum(
             self.__get_value__(self.model.pv_to_eeg[timestep], use_values)
             * self.eeg_prices.loc[timestep]
-            * self.hours_per_timestep
             for timestep in self.timesteps
         )
 
@@ -913,13 +910,16 @@ class EnergyCostCalculator:
         wholesale_earnings = sum(
             self.__get_value__(self.model.storage_to_wholesale[timestep], use_values)
             * self.wholesale_market_prices.loc[timestep]
-            * self.hours_per_timestep
+            for timestep in self.timesteps
+        )
+        wholesale_earnings += sum(
+            self._get_value(self.model.pv_to_wholesale[timestep], use_values)
+            * self.wholesale_market_prices.loc[timestep]
             for timestep in self.timesteps
         )
         wholesale_costs = sum(
             self.__get_value__(self.model.wholesale_to_storage[timestep], use_values)
             * self.wholesale_market_prices.loc[timestep]
-            * self.hours_per_timestep
             for timestep in self.timesteps
         )
         return (wholesale_earnings - wholesale_costs) * (1 - self.wholesale_fee)
@@ -1003,9 +1003,7 @@ class EnergyCostCalculator:
             + self.__get_value__(self.model.storage_to_home[timestep], use_values)
             for timestep in self.timesteps
         )
-        return (
-            self.discharge_penalty_per_kwh * total_discharge * self.hours_per_timestep
-        )
+        return self.discharge_penalty_per_kwh * total_discharge
 
     def calculate_cycle_cost_penalty(self, use_values=False):
         total_discharge = sum(
@@ -1017,7 +1015,7 @@ class EnergyCostCalculator:
             + self.__get_value__(self.model.storage_to_home[timestep], use_values)
             for timestep in self.timesteps
         )
-        return self.cycle_cost_per_kwh * total_discharge * self.hours_per_timestep
+        return self.cycle_cost_per_kwh * total_discharge
 
     def set_max_green_energy_objective(self):
         """Set objective to maximize PV self-consumption.
@@ -1030,16 +1028,13 @@ class EnergyCostCalculator:
         """
         log.info("Setting up green-energy objective (maximize PV self-consumption)...")
 
-        # maximize direct PV consumption
-        expr = sum(
-            self.model.pv_to_home[timestep] * self.hours_per_timestep
-            for timestep in self.timesteps
-        )
+        # maximize direct PV consumption (kWh per timestep)
+        expr = sum(self.model.pv_to_home[timestep] for timestep in self.timesteps)
 
         # include PV charged to storage for later home use when 'home' use-case exists
         if "home" in self.storage_use_cases:
             expr = expr + sum(
-                self.model.pv_to_storage[timestep, "home"] * self.hours_per_timestep
+                self.model.pv_to_storage[timestep, "home"]
                 for timestep in self.timesteps
             )
 
@@ -1354,12 +1349,12 @@ class EnergyCostCalculator:
             raise ValueError("Model not optimized yet - run optimize() first!")
 
         energy_flows = self.get_energy_flows()
-        timestep_energy = float(self.hours_per_timestep)
+        h = float(self.hours_per_timestep)
 
         def col_energy_sum(column: str) -> float:
             if column not in energy_flows.columns:
                 return 0.0
-            return float(energy_flows[column].sum() * timestep_energy)
+            return float(energy_flows[column].sum())
 
         charged_by_source_kwh = {
             "pv": (
@@ -1385,7 +1380,7 @@ class EnergyCostCalculator:
         max_discharge_kwh = (
             float(self.storage.c_rate)
             * float(self.storage.volume)
-            * timestep_energy
+            * h
             * len(self.timesteps)
         )
 
@@ -1661,7 +1656,7 @@ class EnergyCostCalculator:
         )
 
         df = df.drop(columns=[col for col in df.columns if (df[col] == 0).all()])
-        long = df.melt(id_vars=[df.columns[0]], var_name="Use case", value_name="kW")
+        long = df.melt(id_vars=[df.columns[0]], var_name="Use case", value_name="kWh")
         fig = px.line(long, x="t", y="kW", color="Use case", title="Charge / Discharge")
 
         if show:
