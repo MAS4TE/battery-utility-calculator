@@ -40,6 +40,11 @@ def test_ECC_baseline():
         supplier_prices=pd.Series([1, 1, 1], index=idx_3),
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([1, 1, 1], index=idx_3),
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calculator.optimize(solver="highs")
     assert round(costs, 0) == -3
@@ -65,6 +70,11 @@ def test_ECC_opti_storage():
         supplier_prices=pd.Series([0, 1, 1], index=idx_3),
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([1, 1, 1], index=idx_3),
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calculator.optimize(solver="highs")
     assert round(costs, 0) == -1
@@ -83,6 +93,11 @@ def test_ECC_opti_storage_2():
         supplier_prices=pd.Series([0, 1, 1], index=idx_3),
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([2, 2, 2], index=idx_3),
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calculator.optimize(solver="highs")
     assert round(costs) == -3
@@ -98,6 +113,11 @@ def test_ECC_selling_pv():
         supplier_prices=pd.Series([1, 1, 1], index=idx_3),
         solar_generation=pd.Series([1, 0, 0], index=idx_3),
         demand=pd.Series([0, 0, 0], index=idx_3),
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calculator.optimize(solver="highs")
     assert round(costs, 0) == 1
@@ -115,6 +135,11 @@ def test_ECC_selling_pv_w_storage():
         supplier_prices=pd.Series([1, 1, 1], index=idx_3),
         solar_generation=pd.Series([1, 0, 0], index=idx_3),
         demand=pd.Series([0, 0, 0], index=idx_3),
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calculator.optimize(solver="highs")
     assert round(costs, 0) == 2
@@ -130,6 +155,11 @@ def test_ECC_selling_pv_w_storage():
         supplier_prices=pd.Series([5, 10, 20], index=idx_3),
         solar_generation=pd.Series([1, 1, 0], index=idx_3),
         demand=pd.Series([0, 0, 2], index=idx_3),
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calculator.optimize(solver="highs")
     assert round(costs, 0) == 0
@@ -145,6 +175,11 @@ def test_ECC_negative_prices():
         supplier_prices=pd.Series([5, -20, 5], index=idx_3),
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([0, 0, 2], index=idx_3),
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calculator.optimize(solver="highs")
     assert round(costs, 0) == 40
@@ -160,6 +195,11 @@ def test_ECC_c_rate():
         supplier_prices=pd.Series([0, 10, 0], index=idx_3),
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([2, 2, 0], index=idx_3),
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calculator.optimize(solver="highs")
     assert round(costs, 0) == -10
@@ -172,7 +212,7 @@ def test_ECC_wholesale():
     # no demand, just buying from wholesale when price is 0 and selling again when price is 5
     # should be able to just do this once, as we only have volume of 1
     # buy for 0, sell for 5 -> gain of 5€, but 50% fee -> 2.5€
-    ecc = EnergyCostCalculator(
+    calculator = EnergyCostCalculator(
         storage=storage,
         demand=pd.Series([0, 0, 0, 0], index=idx_4),
         solar_generation=pd.Series([0, 0, 0, 0], index=idx_4),
@@ -181,14 +221,19 @@ def test_ECC_wholesale():
         community_market_prices={"aachen": pd.Series([0, 0, 0, 0], index=idx_4)},
         wholesale_market_prices=pd.Series([0, 0, 5, 5], index=idx_4),
         wholesale_fee=0.5,
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
-    costs = ecc.optimize(solver="highs")
+    costs = calculator.optimize(solver="highs")
     assert np.isclose(costs, 2.449999, atol=1e-6)
 
     # same as above, but volume of 2, so should be able to do two times for total gain of 4
     # no fee, so 100% of profit goes to customer
     storage = Storage(id=0, c_rate=1, volume=2)
-    ecc = EnergyCostCalculator(
+    calculator = EnergyCostCalculator(
         storage=storage,
         demand=pd.Series([0, 0, 0, 0], index=idx_4),
         solar_generation=pd.Series([0, 0, 0, 0], index=idx_4),
@@ -197,8 +242,13 @@ def test_ECC_wholesale():
         community_market_prices={"aachen": pd.Series([0, 0, 0, 0], index=idx_4)},
         wholesale_market_prices=pd.Series([3, 3, 5, 5], index=idx_4),
         wholesale_fee=0,
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
-    costs = ecc.optimize(solver="highs")
+    costs = calculator.optimize(solver="highs")
     assert round(costs, 0) == 4
 
 
@@ -217,10 +267,18 @@ def test_ECC_pv_to_wholesale_toggle_sets_bounds():
     ecc_disabled = EnergyCostCalculator(
         **common_kwargs,
         allow_pv_to_wholesale=False,
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
     )
     ecc_enabled = EnergyCostCalculator(
         **common_kwargs,
         allow_pv_to_wholesale=True,
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
     )
 
     assert ecc_disabled.model.pv_to_wholesale[0].ub == 0
@@ -245,6 +303,11 @@ def test_ECC_charge_discharge_eff():
         supplier_prices=pd.Series([0, 1, 1], index=idx_3),
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([1, 1, 1], index=idx_3),
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calculator.optimize(solver="highs")
     assert round(costs, 1) == -1.5
@@ -260,6 +323,11 @@ def test_ECC_charge_discharge_eff():
         supplier_prices=pd.Series([0, 1, 1], index=idx_3),
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([1, 1, 1], index=idx_3),
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calculator.optimize(solver="highs")
     assert np.isclose(costs, -1.5000005, atol=1e-6)
@@ -275,6 +343,11 @@ def test_ECC_charge_discharge_eff():
         supplier_prices=pd.Series([0, 1, 1], index=idx_3),
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([1, 1, 1], index=idx_3),
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calculator.optimize(solver="highs")
     assert round(costs, 2) == -1.75
@@ -292,6 +365,11 @@ def test_ECC_discharge_penalty_is_applied():
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([1, 1, 1], index=idx_3),
         discharge_penalty_per_kwh=0.0,
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     base_costs = base_calc.optimize(solver="appsi_highs")
 
@@ -306,6 +384,11 @@ def test_ECC_discharge_penalty_is_applied():
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([1, 1, 1], index=idx_3),
         discharge_penalty_per_kwh=0.1,
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     penalized_costs = penalized_calc.optimize(solver="highs")
 
@@ -328,6 +411,11 @@ def test_ECC_cycle_cost_per_kwh_is_applied():
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([1, 1, 1], index=idx_3),
         cycle_cost_per_kwh=0.0,
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     base_costs = base_calc.optimize(solver="appsi_highs")
 
@@ -342,6 +430,11 @@ def test_ECC_cycle_cost_per_kwh_is_applied():
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([1, 1, 1], index=idx_3),
         cycle_cost_per_kwh=0.05,
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     cycle_costs = cycle_cost_calc.optimize(solver="appsi_highs")
 
@@ -369,6 +462,11 @@ def test_ECC_hours_per_timestep():
         solar_generation=pd.Series([0, 0, 0, 0], index=idx_4),
         demand=pd.Series([1, 1, 1, 1], index=idx_4),
         hours_per_timestep=0.25,
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calculator.optimize(solver="highs")
     assert np.isclose(costs, -1)
@@ -389,6 +487,10 @@ def test_ECC_hours_per_timestep_storage_shift():
         hours_per_timestep=0.25,
         allow_pv_to_wholesale=False,
         storage_use_cases=["home"],
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
     )
     costs = calculator.optimize(solver="appsi_highs")
     flows = calculator.get_energy_flows()
@@ -414,6 +516,10 @@ def test_ECC_hours_per_timestep_c_rate_energy_limit():
         hours_per_timestep=0.25,
         allow_pv_to_wholesale=False,
         storage_use_cases=["home"],
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
     )
     calculator.optimize(solver="appsi_highs")
     flows = calculator.get_energy_flows()
@@ -431,6 +537,11 @@ def test_ECC_soc_start():
         supplier_prices=pd.Series([0, 1, 1], index=idx_3),
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([1, 1, 1], index=idx_3),
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calculator.optimize(solver="highs")
     soc_df = calculator.get_storage_soc_timeseries_df()
@@ -446,6 +557,11 @@ def test_ECC_soc_end():
         supplier_prices=pd.Series([0, 1, 1], index=idx_3),
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([1, 1, 0], index=idx_3),
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calculator.optimize(solver="highs")
     soc_df = calculator.get_storage_soc_timeseries_df()
@@ -463,6 +579,11 @@ def test_green_objective_prefers_direct_pv_to_home():
         solar_generation=pd.Series([1, 1, 1], index=idx_3),
         demand=pd.Series([1, 1, 1], index=idx_3),
         goal="max_green_energy",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     calc.optimize(solver="highs")
     flows = calc.get_energy_flows()
@@ -483,6 +604,11 @@ def test_green_objective_stores_pv_for_later_home_use():
         demand=pd.Series([0, 1, 0], index=idx_3),
         wholesale_fee=0,
         goal="max_green_energy",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     calc.optimize(solver="highs")
     flows = calc.get_energy_flows()
@@ -504,6 +630,11 @@ def test_green_objective_stores_pv_for_later_home_use():
         demand=pd.Series([0, 1, 0], index=idx_3),
         wholesale_fee=0,
         goal="max_cashflow",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     calc.optimize(solver="highs")
     # use wholesale operation if goal is set to max cashflow
@@ -522,6 +653,11 @@ def test_green_objective_respects_no_home_use_case():
         demand=pd.Series([0, 1, 0], index=idx_3),
         storage_use_cases=["eeg"],
         goal="max_green_energy",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     calc.optimize(solver="highs")
     costs = calc.calculate_costs()
@@ -550,6 +686,11 @@ def test_calculate_storage_worth_eeg_eligible():
         solar_generation=solar_generation_large,
         demand=pd.Series([0, 0, 0], index=idx_3),
         eeg_eligible=True,
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs_with_eeg = ecc_with.optimize("appsi_highs")
     assert round(costs_with_eeg) == 3
@@ -563,6 +704,11 @@ def test_calculate_storage_worth_eeg_eligible():
         solar_generation=solar_generation_small,
         demand=pd.Series([0, 0, 0], index=idx_3),
         eeg_eligible=False,
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs_without_eeg = ecc_without.optimize("appsi_highs")
 
@@ -579,6 +725,10 @@ def test_storage_usage_kpis_and_summary_plot():
         solar_generation=pd.Series([1, 0, 0], index=idx_3),
         demand=pd.Series([0, 1, 0], index=idx_3),
         allow_pv_to_wholesale=False,
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
     )
     calc.optimize(solver="appsi_highs")
 
@@ -611,6 +761,11 @@ def test_storage_usage_kpis_zero_volume_storage():
         supplier_prices=pd.Series([1, 1, 1], index=idx_3),
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([1, 1, 1], index=idx_3),
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     calc.optimize(solver="appsi_highs")
 
@@ -635,6 +790,10 @@ def test_ECC_grid_fees_reduce_non_wholesale_cashflow():
         allow_pv_to_wholesale=False,
         my_city="aachen",
         storage_city="aachen",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
     )
     base_costs = base_calc.optimize(solver="appsi_highs")
 
@@ -654,6 +813,10 @@ def test_ECC_grid_fees_reduce_non_wholesale_cashflow():
         grid_fee_between_cities={
             "aachen": {"aachen": 0.05},
         },
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
     )
     fee_costs = fee_calc.optimize(solver="appsi_highs")
     fee_cashflows = fee_calc.get_cashflows()
@@ -678,6 +841,11 @@ def test_ECC_grid_fees_do_not_affect_wholesale_only_operations():
         **kwargs,
         my_city="aachen",
         storage_city="aachen",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     with_fee = EnergyCostCalculator(
         **kwargs,
@@ -686,6 +854,11 @@ def test_ECC_grid_fees_do_not_affect_wholesale_only_operations():
         grid_fee_between_cities={
             "aachen": {"liege": 5.0},
         },
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
 
     no_fee_costs = no_fee.optimize(solver="appsi_highs")
@@ -711,6 +884,10 @@ def test_ECC_grid_city_ordering_changes_costs():
             allow_pv_to_wholesale=False,
             my_city="aachen",
             storage_city=storage_city,
+            allow_community_to_home=False,
+            allow_community_to_storage=False,
+            allow_pv_to_community=False,
+            allow_storage_to_community=False,
         )
         costs_by_storage_city[storage_city] = calc.optimize(solver="appsi_highs")
 
@@ -732,6 +909,11 @@ def test_ECC_disables_supplier_to_storage_for_non_local_supplier(caplog):
         demand=pd.Series([1, 1, 1], index=idx_3),
         my_city="aachen",
         storage_city="liege",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     calc.optimize(solver="appsi_highs")
     flows = calc.get_energy_flows()
@@ -753,6 +935,11 @@ def test_ECC_community_city_not_in_grid_fee_raises():
             supplier_prices=pd.Series([0, 0, 0], index=idx_3),
             solar_generation=pd.Series([0, 0, 0], index=idx_3),
             demand=pd.Series([0, 0, 0], index=idx_3),
+            allow_community_to_home=False,
+            allow_community_to_storage=False,
+            allow_pv_to_community=False,
+            allow_storage_to_community=False,
+            allow_pv_to_wholesale=True,
         )
 
 
@@ -774,6 +961,10 @@ def test_ECC_multi_city_community_routes_by_price():
             "aachen": {"aachen": 0.0, "liege": 0.01},
             "liege": {"aachen": 0.01, "liege": 0.0},
         },
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calc.optimize(solver="appsi_highs")
     flows = calc.get_energy_flows()
@@ -801,6 +992,11 @@ def test_ECC_remote_storage():
             "aachen": {"aachen": 0.0, "liege": 1},
             "liege": {"aachen": 1, "liege": 0.0},
         },
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
 
     costs = calc.optimize(solver="appsi_highs")
@@ -825,6 +1021,7 @@ def test_ECC_no_community_market_when_none_or_empty():
         allow_community_to_home=True,
         allow_community_to_storage=True,
         allow_storage_to_community=True,
+        allow_pv_to_wholesale=True,
     )
 
     for community_market_prices in (None, {}):
@@ -866,6 +1063,9 @@ def test_ECC_remote_storage_remote_community_market():
             "liege": {"aachen": 1, "liege": 0.0, "heerlen": 2},
             "heerlen": {"aachen": 1, "heerlen": 0.0, "liege": 2},
         },
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calc.optimize(solver="appsi_highs")
     flows = calc.get_energy_flows()
@@ -891,6 +1091,10 @@ def test_ECC_community_market_arbitrage():
         demand=pd.Series([0, 0], index=idx_2),
         allow_community_market_arbitrage=True,
         allow_storage_to_community=True,
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     costs = calc.optimize(solver="appsi_highs")
     flows = calc.get_energy_flows()
@@ -914,6 +1118,10 @@ def test_ECC_pv_via_storage_to_community():
         demand=pd.Series([0, 0], index=idx_2),
         allow_storage_to_community=True,
         allow_community_market_arbitrage=False,
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     calc.optimize(solver="appsi_highs")
     flows = calc.get_energy_flows()
