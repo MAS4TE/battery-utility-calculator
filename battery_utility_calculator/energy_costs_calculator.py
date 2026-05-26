@@ -58,6 +58,7 @@ class EnergyCostCalculator:
         storage_use_cases: list[str] = ["eeg", "wholesale", "community", "home"],
         allow_community_to_home: bool = False,
         allow_community_to_storage: bool = False,
+        allow_community_market_arbitrage: bool = True,
         allow_pv_to_community: bool = False,
         allow_storage_to_community: bool = False,
         allow_wholesale_to_home: bool = False,
@@ -86,6 +87,11 @@ class EnergyCostCalculator:
             wholesale_market_prices (pd.Series): The wholesale market prices for the optimization. Values should be in EUR per kWh. Index has to be pd.DateTimeIndex.
             hours_per_timestep (int | float): Hours per timesteps, e. g. 0.25 equals quarter hour.
             storage_use_cases (list[str]): The use cases for energy storage. Allowed values are "eeg", "wholesale", "community", "home"
+            allow_community_to_storage (bool): Import from community market into the home SOC bucket (community → storage → home).
+            allow_community_market_arbitrage (bool): Import into the community SOC bucket for round-trip arbitrage (requires ``allow_storage_to_community`` to sell back).
+            allow_storage_to_community (bool): Discharge community SOC to the community market (PV via storage or arbitrage).
+            allow_community_to_home (bool): Direct community import to home without storage.
+            allow_pv_to_community (bool): Direct PV export to the community market.
             wholesale_fee (float): Percentage of earned wholesale money that has to be given away (0.0 to 1.0). Default is 0.3.
             my_city (str): City of the prosumer. Must be a key in ``grid_fee_between_cities``. Default is "aachen".
             grid_fee_between_cities (dict[str, dict[str, float]]): Grid fees in EUR/kWh for energy transferred between cities. Default is DEFAULT_GRID_FEE_BETWEEN_CITIES.
@@ -123,6 +129,7 @@ class EnergyCostCalculator:
         self.allow_community_to_home = allow_community_to_home
         self.allow_storage_to_community = allow_storage_to_community
         self.allow_community_to_storage = allow_community_to_storage
+        self.allow_community_market_arbitrage = allow_community_market_arbitrage
         self.wholesale_fee = wholesale_fee
         self.grid_fee_between_cities = self.__prepare_grid_fee_between_cities__(
             grid_fee_between_cities
@@ -301,6 +308,35 @@ class EnergyCostCalculator:
             for city in self.community_cities
         )
 
+    def __community_to_storage_value__(
+        self,
+        timestep: int,
+        city: str,
+        *,
+        use_values: bool = False,
+    ):
+        return self.__community_flow_value__(
+            "community_to_storage_for_home",
+            timestep,
+            city=city,
+            use_values=use_values,
+        ) + self.__community_flow_value__(
+            "community_to_storage_for_community",
+            timestep,
+            city=city,
+            use_values=use_values,
+        )
+
+    def __community_to_storage_timestep_total__(
+        self, timestep: int, *, use_values: bool = False
+    ):
+        return sum(
+            self.__community_to_storage_value__(
+                timestep, city=city, use_values=use_values
+            )
+            for city in self.community_cities
+        )
+
     def __check_prepare_timeseries_indices__(self) -> None:
         """Check if all timeseries indices are valid."""
         attrs = [
@@ -442,9 +478,18 @@ class EnergyCostCalculator:
                 self.timesteps, domain=pyo.NonNegativeReals, bounds=(0, 0)
             )
 
-        # charging storage from community market
+        # charging storage from community market (split by SOC bucket)
         self.__define_community_flow_var__(
-            "community_to_storage", self.allow_community_to_storage
+            "community_to_storage_for_home",
+            self.has_community_market
+            and self.allow_community_to_storage
+            and "home" in self.storage_use_cases,
+        )
+        self.__define_community_flow_var__(
+            "community_to_storage_for_community",
+            self.has_community_market
+            and self.allow_community_market_arbitrage
+            and "community" in self.storage_use_cases,
         )
 
         # buying energy from community market
@@ -515,7 +560,8 @@ class EnergyCostCalculator:
         # energy flow TO storage must be smaller than c_rate * hours_per_timestep
         def restrict_storage_charge(model, timestep):
             community_to_storage = sum(
-                model.community_to_storage[timestep, city]
+                model.community_to_storage_for_home[timestep, city]
+                + model.community_to_storage_for_community[timestep, city]
                 for city in self.community_cities
             )
 
@@ -660,9 +706,12 @@ class EnergyCostCalculator:
         if "community" in self.storage_use_cases:
 
             def restrict_soc_community(model, timestep):
-                community_charge = sum(
-                    model.community_to_storage[timestep, city]
-                    for city in self.community_cities
+                community_charge = (
+                    sum(
+                        model.community_to_storage_for_community[timestep, city]
+                        for city in self.community_cities
+                    )
+                    + model.pv_to_storage[timestep, "community"]
                 )
                 community_discharge = sum(
                     model.storage_to_community[timestep, city]
@@ -691,6 +740,10 @@ class EnergyCostCalculator:
         if "home" in self.storage_use_cases:
 
             def restrict_soc_home(model, timestep):
+                community_to_storage_for_home = sum(
+                    model.community_to_storage_for_home[timestep, city]
+                    for city in self.community_cities
+                )
                 if timestep == self.timesteps[0]:
                     return model.storage_level[
                         timestep, "home"
@@ -698,7 +751,7 @@ class EnergyCostCalculator:
                         timestep
                     ] + self.charge_efficiency * model.pv_to_storage[
                         timestep, "home"
-                    ] - (
+                    ] + self.charge_efficiency * community_to_storage_for_home - (
                         (1 / self.discharge_efficiency)
                         * model.storage_to_home[timestep]
                     )
@@ -710,7 +763,7 @@ class EnergyCostCalculator:
                         timestep
                     ] + self.charge_efficiency * model.pv_to_storage[
                         timestep, "home"
-                    ] - (
+                    ] + self.charge_efficiency * community_to_storage_for_home - (
                         (1 / self.discharge_efficiency)
                         * model.storage_to_home[timestep]
                     )
@@ -804,9 +857,8 @@ class EnergyCostCalculator:
                     city=city,
                     use_values=use_values,
                 )
-                - self.__community_flow_value__(
-                    var_name="community_to_storage",
-                    timestep=timestep,
+                - self.__community_to_storage_value__(
+                    timestep,
                     city=city,
                     use_values=use_values,
                 )
@@ -896,11 +948,8 @@ class EnergyCostCalculator:
 
         for city in self.community_market_prices:
             community_to_storage = sum(
-                self.__community_flow_value__(
-                    "community_to_storage",
-                    timestep,
-                    city=city,
-                    use_values=use_values,
+                self.__community_to_storage_value__(
+                    timestep, city=city, use_values=use_values
                 )
                 for timestep in self.timesteps
             )
@@ -1128,16 +1177,47 @@ class EnergyCostCalculator:
             for var_name in (
                 "storage_to_community",
                 "pv_to_community",
-                "community_to_storage",
+                "community_to_storage_for_home",
+                "community_to_storage_for_community",
             ):
                 by_city, aggregate = self.__community_flow_series__(var_name)
                 for city, values in by_city.items():
                     energy_flows[f"{var_name}_{city}"] = values
                 energy_flows[var_name] = aggregate
+            _, home_agg = self.__community_flow_series__(
+                "community_to_storage_for_home"
+            )
+            _, community_agg = self.__community_flow_series__(
+                "community_to_storage_for_community"
+            )
+            energy_flows["community_to_storage"] = [
+                h + c for h, c in zip(home_agg, community_agg, strict=True)
+            ]
+            for city in self.community_market_prices:
+                energy_flows[f"community_to_storage_{city}"] = [
+                    float(
+                        self.model.community_to_storage_for_home[timestep, city].value
+                        or 0.0
+                    )
+                    + float(
+                        self.model.community_to_storage_for_community[
+                            timestep, city
+                        ].value
+                        or 0.0
+                    )
+                    for timestep in self.timesteps
+                ]
+            energy_flows["pv_to_storage_for_community"] = [
+                self.model.pv_to_storage[timestep, "community"].value
+                for timestep in self.timesteps
+            ]
         else:
             energy_flows["storage_to_community"] = 0
             energy_flows["pv_to_community"] = 0
             energy_flows["community_to_storage"] = 0
+            energy_flows["community_to_storage_for_home"] = 0
+            energy_flows["community_to_storage_for_community"] = 0
+            energy_flows["pv_to_storage_for_community"] = 0
 
         _, community_to_home = self.__community_flow_series__("community_to_home")
         energy_flows["community_to_home"] = community_to_home

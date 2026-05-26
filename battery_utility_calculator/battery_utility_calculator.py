@@ -58,7 +58,9 @@ def calculate_storage_worth(
     storage_use_cases: list[str] = ["eeg", "home", "community", "wholesale"],
     allow_community_to_home: bool = False,
     allow_community_to_storage: bool = False,
+    allow_community_market_arbitrage: bool = False,
     allow_pv_to_community: bool = False,
+    allow_storage_to_community: bool = False,
     allow_storage_to_wholesale: bool = False,
     return_charge_timeseries: bool = False,
     return_soc_timeseries: bool = False,
@@ -82,8 +84,10 @@ def calculate_storage_worth(
         hours_per_timestep (int | float, optional): Hours per timestep, e.g. 0.25 for 15-minute intervals. Defaults to 1.
         storage_use_cases (list[str], optional): Use cases for storage. Defaults to ["eeg", "home", "community", "wholesale"].
         allow_community_to_home (bool, optional): Wether to allow using energy from community for home use. Defaults to False.
-        allow_community_to_storage (bool, optional): Wether to allow storing energy from community for home use. Defaults to False.
+        allow_community_to_storage (bool, optional): Allow community imports into the home storage bucket. Defaults to False.
+        allow_community_market_arbitrage (bool, optional): Allow community round-trip arbitrage via the community storage bucket. Defaults to False.
         allow_pv_to_community (bool, optional): Wether to allow selling PV energy to community. Defaults to False.
+        allow_storage_to_community (bool, optional): Allow discharging the community storage bucket to the community market. Defaults to False.
         allow_storage_to_wholesale (bool, optional): Wether to allow selling from storage to wholesale market. Defaults to False.
         return_charge_timeseries (bool, optional): If True, returns dict with charge timeseries data.
             Default is False.
@@ -118,7 +122,9 @@ def calculate_storage_worth(
         storage_use_cases=storage_use_cases,
         allow_community_to_home=allow_community_to_home,
         allow_community_to_storage=allow_community_to_storage,
+        allow_community_market_arbitrage=allow_community_market_arbitrage,
         allow_pv_to_community=allow_pv_to_community,
+        allow_storage_to_community=allow_storage_to_community,
         allow_storage_to_wholesale=allow_storage_to_wholesale,
         eeg_eligible=eeg_eligible,
         discharge_penalty_per_kwh=discharge_penalty_per_kwh,
@@ -143,7 +149,9 @@ def calculate_storage_worth(
         storage_use_cases=storage_use_cases,
         allow_community_to_home=allow_community_to_home,
         allow_community_to_storage=allow_community_to_storage,
+        allow_community_market_arbitrage=allow_community_market_arbitrage,
         allow_pv_to_community=allow_pv_to_community,
+        allow_storage_to_community=allow_storage_to_community,
         allow_storage_to_wholesale=allow_storage_to_wholesale,
         eeg_eligible=eeg_eligible,
         discharge_penalty_per_kwh=discharge_penalty_per_kwh,
@@ -218,8 +226,10 @@ def calculate_multiple_storage_worth(
         wholesale_market_prices (pd.Series): Wholesale market timeseries. Values should be in EUR per kWh.
         storage_use_cases (list[str], optional): Use cases for storage. Defaults to ["eeg", "home", "community", "wholesale"].
         allow_community_to_home (bool, optional): Wether to allow using energy from community for home use. Defaults to False.
-        allow_community_to_storage (bool, optional): Wether to allow storing energy from community for home use. Defaults to False.
+        allow_community_to_storage (bool, optional): Allow community imports into the home storage bucket. Defaults to False.
+        allow_community_market_arbitrage (bool, optional): Allow community round-trip arbitrage via the community storage bucket. Defaults to False.
         allow_pv_to_community (bool, optional): Wether to allow selling PV energy to community. Defaults to False.
+        allow_storage_to_community (bool, optional): Allow discharging the community storage bucket to the community market. Defaults to False.
         allow_storage_to_wholesale (bool, optional): Wether to allow selling from storage to wholesale market. Defaults to False.
         return_charge_timeseries (bool, optional): If True, returns dict with charge timeseries data. Defaults to False.
         return_soc_timeseries (bool, optional): If True, returns dict with SOC timeseries data. Defaults to False.

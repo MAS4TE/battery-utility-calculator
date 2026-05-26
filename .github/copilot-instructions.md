@@ -42,6 +42,7 @@ worth = calculate_storage_worth(
 Important code patterns & conventions
 - Variables map to energy flows with systematic names: `pv_to_home`, `pv_to_eeg`, `pv_to_storage`, `storage_to_home`, `storage_to_eeg`, `wholesale_to_storage`, `supplier_to_home`, etc.
 - `storage_use_cases` (default `['eeg','wholesale','community','home']`) is used as a second index for `pv_to_storage` and `storage_level` and drives per-use-case SOC constraints.
+- Community storage imports are split: `community_to_storage_for_home` (home SOC, gated by `allow_community_to_storage`) and `community_to_storage_for_community` (community SOC, gated by `allow_community_market_arbitrage`). `allow_storage_to_community` enables discharge from the community SOC (PV via `pv_to_storage['community']` or arbitrage).
 - Objective: the model maximizes summed cashflows (community + supplier + EEG + wholesale) in `set_model_objective()`.
 - Solver strings: ECC.optimize default is `gurobi`; tests call open solvers like `appsi_highs` (or `highs`). Use the exact tester solver string when running tests.
 
