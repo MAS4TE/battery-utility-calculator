@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "battery-utility-calculator"
-version = "0.1.0"
+version = "0.2.0"
 description = ""
 authors = [{ name = "Florian Maurer", email = "maurer@fh-aachen.de"}, { name = "Christoph Komanns", email = "komanns@fh-aachen.de"}]
 license = {text = "MIT"}
