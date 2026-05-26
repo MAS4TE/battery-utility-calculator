@@ -10,7 +10,6 @@ __pycache__/
 *.swp
 
 /.venv/
-.venv/
 /env/
 
 /test_data/

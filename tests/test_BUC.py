@@ -9,11 +9,27 @@ from battery_utility_calculator.battery_utility_calculator import (
     Storage,
     calculate_bidding_curve,
     calculate_multiple_storage_worth,
+    calculate_multiple_storage_worth_by_city,
     calculate_storage_worth,
     plot_multiple_storage_worth_cashflows,
 )
 
 idx = pd.date_range("2025-01-01", freq="h", periods=3)
+
+
+def test_calculate_storage_worth_without_community_market():
+    worth = calculate_storage_worth(
+        baseline_storage=Storage(0, 1, 0, 1),
+        storage_to_calculate=Storage(0, 1, 1, 1),
+        eeg_prices=pd.Series([0, 0, 0], index=idx),
+        wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
+        community_market_prices=None,
+        supplier_prices=pd.Series([0, 1, 1], index=idx),
+        solar_generation=pd.Series([0, 0, 0], index=idx),
+        demand=pd.Series([1, 1, 1], index=idx),
+        solver="appsi_highs",
+    )
+    assert isinstance(worth, float)
 
 
 def test_calculate_storage_worth():
@@ -25,7 +41,7 @@ def test_calculate_storage_worth():
         storage_to_calculate=storage_to_calc,
         eeg_prices=pd.Series([0, 0, 0], index=idx),
         wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
-        community_market_prices=pd.Series([0, 0, 0], index=idx),
+        community_market_prices={"aachen": pd.Series([0, 0, 0], index=idx)},
         supplier_prices=pd.Series([0, 1, 1], index=idx),
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
@@ -38,7 +54,7 @@ def test_calculate_storage_worth():
         storage_to_calculate=storage_to_calc,
         eeg_prices=pd.Series([0, 0, 0], index=idx),
         wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
-        community_market_prices=pd.Series([0, 0, 0], index=idx),
+        community_market_prices={"aachen": pd.Series([0, 0, 0], index=idx)},
         supplier_prices=pd.Series([0, 1, 1], index=idx),
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
@@ -63,7 +79,7 @@ def test_calculate_storage_worth():
         storage_to_calculate=storage_to_calc,
         eeg_prices=pd.Series([0, 0, 0], index=idx),
         wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
-        community_market_prices=pd.Series([0, 0, 0], index=idx),
+        community_market_prices={"aachen": pd.Series([0, 0, 0], index=idx)},
         supplier_prices=pd.Series([0, 1, 1], index=idx),
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
@@ -82,7 +98,7 @@ def test_calculate_storage_worth_cycle_cost_default_compatibility():
         storage_to_calculate=storage_to_calc,
         eeg_prices=pd.Series([0, 0, 0], index=idx),
         wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
-        community_market_prices=pd.Series([0, 0, 0], index=idx),
+        community_market_prices={"aachen": pd.Series([0, 0, 0], index=idx)},
         supplier_prices=pd.Series([0, 1, 1], index=idx),
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
@@ -93,7 +109,7 @@ def test_calculate_storage_worth_cycle_cost_default_compatibility():
         storage_to_calculate=storage_to_calc,
         eeg_prices=pd.Series([0, 0, 0], index=idx),
         wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
-        community_market_prices=pd.Series([0, 0, 0], index=idx),
+        community_market_prices={"aachen": pd.Series([0, 0, 0], index=idx)},
         supplier_prices=pd.Series([0, 1, 1], index=idx),
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
@@ -105,7 +121,7 @@ def test_calculate_storage_worth_cycle_cost_default_compatibility():
         storage_to_calculate=storage_to_calc,
         eeg_prices=pd.Series([0, 0, 0], index=idx),
         wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
-        community_market_prices=pd.Series([0, 0, 0], index=idx),
+        community_market_prices={"aachen": pd.Series([0, 0, 0], index=idx)},
         supplier_prices=pd.Series([0, 1, 1], index=idx),
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
@@ -161,7 +177,7 @@ def test_calculate_multiple_storage_worth():
         storages_to_calculate=storages_to_calc,
         eeg_prices=pd.Series([0, 0, 0], index=idx),
         wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
-        community_market_prices=pd.Series([0, 0, 0], index=idx),
+        community_market_prices={"aachen": pd.Series([0, 0, 0], index=idx)},
         supplier_prices=pd.Series([0, 1, 1], index=idx),
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
@@ -174,7 +190,7 @@ def test_calculate_multiple_storage_worth():
         storages_to_calculate=storages_to_calc,
         eeg_prices=pd.Series([0, 0, 0], index=idx),
         wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
-        community_market_prices=pd.Series([0, 0, 0], index=idx),
+        community_market_prices={"aachen": pd.Series([0, 0, 0], index=idx)},
         supplier_prices=pd.Series([0, 1, 1], index=idx),
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
@@ -185,7 +201,7 @@ def test_calculate_multiple_storage_worth():
     assert isinstance(df_with_cf["storages_to_calc_cashflows"], dict)
 
     fig = plot_multiple_storage_worth_cashflows(df_with_cf, show=False, stacked=False)
-    assert len(fig.data) == 4
+    assert len(fig.data) == 5
 
     with pytest.raises(ValueError, match="missing"):
         plot_multiple_storage_worth_cashflows({"results_df": df_with_cf["results_df"]})
@@ -195,7 +211,7 @@ def test_calculate_multiple_storage_worth():
         storages_to_calculate=storages_to_calc,
         eeg_prices=pd.Series([0, 0, 0], index=idx),
         wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
-        community_market_prices=pd.Series([0, 0, 0], index=idx),
+        community_market_prices={"aachen": pd.Series([0, 0, 0], index=idx)},
         supplier_prices=pd.Series([0, 1, 1], index=idx),
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
@@ -219,7 +235,7 @@ def test_calculate_multiple_storage_worth_cycle_cost_is_consistent():
         storages_to_calculate=storages_to_calc,
         eeg_prices=pd.Series([0, 0, 0], index=idx),
         wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
-        community_market_prices=pd.Series([0, 0, 0], index=idx),
+        community_market_prices={"aachen": pd.Series([0, 0, 0], index=idx)},
         supplier_prices=pd.Series([0, 1, 1], index=idx),
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
@@ -231,7 +247,7 @@ def test_calculate_multiple_storage_worth_cycle_cost_is_consistent():
         storages_to_calculate=storages_to_calc,
         eeg_prices=pd.Series([0, 0, 0], index=idx),
         wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
-        community_market_prices=pd.Series([0, 0, 0], index=idx),
+        community_market_prices={"aachen": pd.Series([0, 0, 0], index=idx)},
         supplier_prices=pd.Series([0, 1, 1], index=idx),
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
@@ -346,3 +362,61 @@ def test_calculate_bidding_curve_seller():
         bidding_curve["marginal_price_per_kwh"].round(2)
         == correct_df["marginal_price_per_kwh"].round(2)
     ).all()
+
+
+def test_calculate_storage_worth_with_my_city_pass_through():
+    baseline_storage = Storage(0, 1, 0, 1)
+    storage_to_calc = Storage(1, 1, 1, 1)
+
+    low_fee_worth = calculate_storage_worth(
+        baseline_storage=baseline_storage,
+        storage_to_calculate=storage_to_calc,
+        eeg_prices=pd.Series([0, 0, 0], index=idx),
+        wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
+        community_market_prices={"aachen": pd.Series([0, 0, 0], index=idx)},
+        supplier_prices=pd.Series([0, 1, 1], index=idx),
+        solar_generation=pd.Series([0, 0, 0], index=idx),
+        demand=pd.Series([1, 1, 1], index=idx),
+        my_city="aachen",
+        storage_city="aachen",
+        solver="appsi_highs",
+    )
+    high_fee_worth = calculate_storage_worth(
+        baseline_storage=baseline_storage,
+        storage_to_calculate=storage_to_calc,
+        eeg_prices=pd.Series([0, 0, 0], index=idx),
+        wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
+        community_market_prices={"aachen": pd.Series([0, 0, 0], index=idx)},
+        supplier_prices=pd.Series([0, 1, 1], index=idx),
+        solar_generation=pd.Series([0, 0, 0], index=idx),
+        demand=pd.Series([1, 1, 1], index=idx),
+        my_city="aachen",
+        storage_city="liege",
+        solver="appsi_highs",
+    )
+
+    assert high_fee_worth < low_fee_worth
+
+
+def test_calculate_multiple_storage_worth_by_city():
+    baseline_storage = Storage(0, 1, 0, 1)
+    storages_to_calc = [Storage(1, 1, 1, 1), Storage(2, 1, 2, 1)]
+    cities = ["aachen", "juelich"]
+
+    result_df = calculate_multiple_storage_worth_by_city(
+        baseline_storage=baseline_storage,
+        storages_to_calculate=storages_to_calc,
+        cities=cities,
+        eeg_prices=pd.Series([0, 0, 0], index=idx),
+        wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
+        community_market_prices={"aachen": pd.Series([0, 0, 0], index=idx)},
+        supplier_prices=pd.Series([0, 1, 1], index=idx),
+        solar_generation=pd.Series([0, 0, 0], index=idx),
+        demand=pd.Series([1, 1, 1], index=idx),
+        solver="appsi_highs",
+    )
+
+    assert "city" in result_df.columns
+    assert set(result_df["city"].unique()) == set(cities)
+    # baseline + 2 storages for each city
+    assert len(result_df) == len(cities) * (1 + len(storages_to_calc))
