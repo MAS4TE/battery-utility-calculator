@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
+import inspect
 import logging
 
 import numpy as np
@@ -208,7 +209,7 @@ def test_ECC_pv_to_wholesale_toggle_sets_bounds():
         solar_generation=pd.Series([1, 1, 1], index=idx_3),
         supplier_prices=pd.Series([0, 0, 0], index=idx_3),
         eeg_prices=pd.Series([0, 0, 0], index=idx_3),
-        community_market_prices=pd.Series([0, 0, 0], index=idx_3),
+        community_market_prices=community_prices(idx_3),
         wholesale_market_prices=pd.Series([10, 10, 10], index=idx_3),
         wholesale_fee=0.0,
     )
@@ -381,7 +382,7 @@ def test_ECC_hours_per_timestep_storage_shift():
         ),
         eeg_prices=pd.Series([0, 0], index=idx_2),
         wholesale_market_prices=pd.Series([0, 0], index=idx_2),
-        community_market_prices=pd.Series([0, 0], index=idx_2),
+        community_market_prices=community_prices(idx_2),
         supplier_prices=pd.Series([100, 10], index=idx_2),
         solar_generation=pd.Series([1, 0], index=idx_2),
         demand=pd.Series([0, 1], index=idx_2),
@@ -406,7 +407,7 @@ def test_ECC_hours_per_timestep_c_rate_energy_limit():
         ),
         eeg_prices=pd.Series([0, 0, 0], index=idx_3),
         wholesale_market_prices=pd.Series([0, 0, 0], index=idx_3),
-        community_market_prices=pd.Series([0, 0, 0], index=idx_3),
+        community_market_prices=community_prices(idx_3),
         supplier_prices=pd.Series([0, 100, 100], index=idx_3),
         solar_generation=pd.Series([2, 0, 0], index=idx_3),
         demand=pd.Series([0, 0, 1], index=idx_3),

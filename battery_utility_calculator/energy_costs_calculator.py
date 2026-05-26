@@ -373,24 +373,26 @@ class EnergyCostCalculator:
             series.index = new_index
             setattr(self, name, series)
 
-        if not self.has_community_market:
-            return
+        if self.has_community_market:
+            prepared_community: dict[str, pd.Series] = {}
+            for city in self.community_cities:
+                series = self.community_market_prices[city].copy()
+                label = f"community_market_prices['{city}']"
+                if not isinstance(series.index, pd.DatetimeIndex):
+                    msg = f"Index of {label} has to be pd.DateTimeIndex!"
+                    raise TypeError(msg)
+                if not series.index.equals(ref_index):
+                    raise ValueError(
+                        f"All timeseries indices must be identical. Index of {label} "
+                        "does not equal index of demand."
+                    )
+                series.index = new_index
+                prepared_community[city] = series
+            self.community_market_prices = prepared_community
 
-        prepared_community: dict[str, pd.Series] = {}
-        for city in self.community_cities:
-            series = self.community_market_prices[city].copy()
-            label = f"community_market_prices['{city}']"
-            if not isinstance(series.index, pd.DatetimeIndex):
-                msg = f"Index of {label} has to be pd.DateTimeIndex!"
-                raise TypeError(msg)
-            if not series.index.equals(ref_index):
-                raise ValueError(
-                    f"All timeseries indices must be identical. Index of {label} "
-                    "does not equal index of demand."
-                )
-            series.index = new_index
-            prepared_community[city] = series
-        self.community_market_prices = prepared_community
+        h = self.hours_per_timestep
+        self.demand = self.demand * h
+        self.solar_generation = self.solar_generation * h
 
     def __set_model_variables__(self):
         log.info("Setting up model variables...")
@@ -871,7 +873,6 @@ class EnergyCostCalculator:
                 )
             )
             * self.community_market_prices[city].loc[timestep]
-            * self.hours_per_timestep
             + self.__community_flow_value__(
                 var_name="pv_to_community",
                 timestep=timestep,
@@ -879,7 +880,6 @@ class EnergyCostCalculator:
                 use_values=use_values,
             )
             * self.community_market_prices[city].loc[timestep]
-            * self.hours_per_timestep
             for timestep in self.timesteps
             for city in self.community_market_prices
         )
@@ -913,7 +913,7 @@ class EnergyCostCalculator:
             for timestep in self.timesteps
         )
         wholesale_earnings += sum(
-            self._get_value(self.model.pv_to_wholesale[timestep], use_values)
+            self.__get_value__(self.model.pv_to_wholesale[timestep], use_values)
             * self.wholesale_market_prices.loc[timestep]
             for timestep in self.timesteps
         )
@@ -991,7 +991,7 @@ class EnergyCostCalculator:
         if isinstance(fee_energy, (int, float)) and fee_energy <= 0:
             return 0.0
 
-        return -fee_energy * self.hours_per_timestep
+        return -fee_energy
 
     def calculate_discharge_penalty(self, use_values=False):
         total_discharge = sum(
