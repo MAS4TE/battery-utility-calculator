@@ -47,14 +47,13 @@ def calculate_storage_worth(
     solar_generation: pd.Series,
     supplier_prices: pd.Series,
     eeg_prices: pd.Series,
-    community_market_prices: pd.Series,
     wholesale_market_prices: pd.Series,
+    community_market_prices: dict[str, pd.Series] | None = None,
     wholesale_fee: float = 0.3,
     my_city: str = "aachen",
     storage_city: str | None = None,
     grid_fee_between_cities: dict[str, dict[str, float]]
     | None = DEFAULT_GRID_FEE_BETWEEN_CITIES,
-    community_city: str | None = None,
     hours_per_timestep: int | float = 1,
     storage_use_cases: list[str] = ["eeg", "home", "community", "wholesale"],
     allow_community_to_home: bool = False,
@@ -78,7 +77,7 @@ def calculate_storage_worth(
         solar_generation (pd.Series): Solar generation timeseries. Values should be in kWh per hour (kW).
         supplier_prices (pd.Series): Grid prices timeseries. Values should be in EUR per kWh.
         eeg_prices (pd.Series): EEG prices timeseries. Values should be in EUR per kWh.
-        community_market_prices (pd.Series): Community market timeseries. Values should be in EUR per kWh.
+        community_market_prices (dict[str, pd.Series] | None): Community market prices per city in EUR per kWh. ``None`` disables the community market.
         wholesale_market_prices (pd.Series): Wholesale market timeseries. Values should be in EUR per kWh.
         hours_per_timestep (int | float, optional): Hours per timestep, e.g. 0.25 for 15-minute intervals. Defaults to 1.
         storage_use_cases (list[str], optional): Use cases for storage. Defaults to ["eeg", "home", "community", "wholesale"].
@@ -115,7 +114,6 @@ def calculate_storage_worth(
         my_city=my_city,
         storage_city=storage_city,
         grid_fee_between_cities=grid_fee_between_cities,
-        community_market_city=community_city,
         hours_per_timestep=hours_per_timestep,
         storage_use_cases=storage_use_cases,
         allow_community_to_home=allow_community_to_home,
@@ -141,7 +139,6 @@ def calculate_storage_worth(
         my_city=my_city,
         storage_city=storage_city,
         grid_fee_between_cities=grid_fee_between_cities,
-        community_market_city=community_city,
         hours_per_timestep=hours_per_timestep,
         storage_use_cases=storage_use_cases,
         allow_community_to_home=allow_community_to_home,
@@ -191,14 +188,13 @@ def calculate_multiple_storage_worth(
     solar_generation: pd.Series,
     supplier_prices: pd.Series,
     eeg_prices: pd.Series,
-    community_market_prices: pd.Series,
     wholesale_market_prices: pd.Series,
+    community_market_prices: dict[str, pd.Series] | None = None,
     wholesale_fee: float = 0.3,
     my_city: str = "aachen",
     storage_city: str | None = None,
     grid_fee_between_cities: dict[str, dict[str, float]]
     | None = DEFAULT_GRID_FEE_BETWEEN_CITIES,
-    community_city: str | None = None,
     return_charge_timeseries: bool = False,
     return_soc_timeseries: bool = False,
     return_cashflows: bool = False,
@@ -218,7 +214,7 @@ def calculate_multiple_storage_worth(
         solar_generation (pd.Series): Solar generation timeseries. Values should be in kWh per hour (kW).
         supplier_prices (pd.Series): Grid prices timeseries. Values should be in EUR per kWh.
         eeg_prices (pd.Series): EEG prices timeseries. Values should be in EUR per kWh.
-        community_market_prices (pd.Series): Community market timeseries. Values should be in EUR per kWh.
+        community_market_prices (dict[str, pd.Series] | None): Community market prices per city in EUR per kWh. ``None`` disables the community market.
         wholesale_market_prices (pd.Series): Wholesale market timeseries. Values should be in EUR per kWh.
         storage_use_cases (list[str], optional): Use cases for storage. Defaults to ["eeg", "home", "community", "wholesale"].
         allow_community_to_home (bool, optional): Wether to allow using energy from community for home use. Defaults to False.
@@ -271,7 +267,6 @@ def calculate_multiple_storage_worth(
         my_city=my_city,
         storage_city=storage_city,
         grid_fee_between_cities=grid_fee_between_cities,
-        community_market_city=community_city,
         eeg_eligible=eeg_eligible,
         discharge_penalty_per_kwh=discharge_penalty_per_kwh,
         cycle_cost_per_kwh=cycle_cost_per_kwh,
@@ -335,7 +330,6 @@ def calculate_multiple_storage_worth(
             my_city=my_city,
             storage_city=storage_city,
             grid_fee_between_cities=grid_fee_between_cities,
-            community_market_city=community_city,
             eeg_eligible=eeg_eligible,
             discharge_penalty_per_kwh=discharge_penalty_per_kwh,
             cycle_cost_per_kwh=cycle_cost_per_kwh,
@@ -471,11 +465,10 @@ def calculate_multiple_storage_worth_by_city(
     solar_generation: pd.Series,
     supplier_prices: pd.Series,
     eeg_prices: pd.Series,
-    community_market_prices: pd.Series,
     wholesale_market_prices: pd.Series,
+    community_market_prices: dict[str, pd.Series] | None = None,
     grid_fee_between_cities: dict[str, dict[str, float]]
     | None = DEFAULT_GRID_FEE_BETWEEN_CITIES,
-    community_city: str | None = None,
     *args,
     **kwargs,
 ) -> pd.DataFrame:
@@ -496,7 +489,6 @@ def calculate_multiple_storage_worth_by_city(
             wholesale_market_prices=wholesale_market_prices,
             my_city=city,
             grid_fee_between_cities=grid_fee_between_cities,
-            community_city=community_city,
             *args,
             **kwargs,
         )

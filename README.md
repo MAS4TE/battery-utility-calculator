@@ -47,7 +47,7 @@ worth = calculate_storage_worth(
     storage_to_calculate=candidate,
     eeg_prices=pd.Series([0, 0, 0]),
     wholesale_market_prices=pd.Series([0, 0, 0]),
-    community_market_prices=pd.Series([0, 0, 0]),
+    community_market_prices={"aachen": pd.Series([0, 0, 0])},
     supplier_prices=pd.Series([0, 1, 1]),
     solar_generation=pd.Series([0, 0, 0]),
     demand=pd.Series([1, 1, 1]),
@@ -61,7 +61,7 @@ result = calculate_storage_worth(
     storage_to_calculate=candidate,
     eeg_prices=pd.Series([0, 0, 0]),
     wholesale_market_prices=pd.Series([0, 0, 0]),
-    community_market_prices=pd.Series([0, 0, 0]),
+    community_market_prices={"aachen": pd.Series([0, 0, 0])},
     supplier_prices=pd.Series([0, 1, 1]),
     solar_generation=pd.Series([0, 0, 0]),
     demand=pd.Series([1, 1, 1]),
@@ -77,7 +77,7 @@ soc_result = calculate_storage_worth(
     storage_to_calculate=candidate,
     eeg_prices=pd.Series([0, 0, 0]),
     wholesale_market_prices=pd.Series([0, 0, 0]),
-    community_market_prices=pd.Series([0, 0, 0]),
+    community_market_prices={"aachen": pd.Series([0, 0, 0])},
     supplier_prices=pd.Series([0, 1, 1]),
     solar_generation=pd.Series([0, 0, 0]),
     demand=pd.Series([1, 1, 1]),
@@ -93,7 +93,7 @@ df = calculate_multiple_storage_worth(
     storages_to_calculate=storages,
     eeg_prices=pd.Series([0, 0, 0]),
     wholesale_market_prices=pd.Series([0, 0, 0]),
-    community_market_prices=pd.Series([0, 0, 0]),
+    community_market_prices={"aachen": pd.Series([0, 0, 0])},
     supplier_prices=pd.Series([0, 1, 1]),
     solar_generation=pd.Series([0, 0, 0]),
     demand=pd.Series([1, 1, 1]),
@@ -109,6 +109,8 @@ curve = calculate_bidding_curve(volumes_worth=vol_worth, buy_or_sell_side="buyer
 Notes about the optimizer
 
 The core optimizer is `EnergyCostCalculator` (in `battery_utility_calculator/energy_costs_calculator.py`). It builds a Pyomo `ConcreteModel` with variables like `pv_to_storage[t,use]` and per-use-case storage state-of-charge variables. The objective maximizes summed cashflows (community + supplier + EEG + wholesale). If you need lower-level control or plotting, instantiate `EnergyCostCalculator` directly and call `optimize(solver=...)`.
+
+`community_market_prices` defaults to `None` (no community market). Pass a dict keyed by city name when community trading should be modelled, for example `{"aachen": pd.Series(...)}`.
 
 ### Optional cycle-cost parameter
 

@@ -52,8 +52,8 @@ class EnergyCostCalculator:
         solar_generation: pd.Series,
         supplier_prices: pd.Series,
         eeg_prices: pd.Series,
-        community_market_prices: pd.Series,
         wholesale_market_prices: pd.Series,
+        community_market_prices: dict[str, pd.Series] | None = None,
         hours_per_timestep: int | float = 1,
         storage_use_cases: list[str] = ["eeg", "wholesale", "community", "home"],
         allow_community_to_home: bool = False,
@@ -69,7 +69,6 @@ class EnergyCostCalculator:
         grid_fee_between_cities: dict[str, dict[str, float]]
         | None = DEFAULT_GRID_FEE_BETWEEN_CITIES,
         storage_city: str | None = None,
-        community_market_city: str | None = None,
         eeg_eligible: bool = True,
         goal: str = "max_cashflow",
         discharge_penalty_per_kwh: float = 1e-6,
@@ -83,7 +82,7 @@ class EnergyCostCalculator:
             solar_generation (pd.Series): The solar generation data for the optimization. Values should be in kW. Index has to be pd.DateTimeIndex.
             supplier_prices (pd.Series): The grid prices for the optimization. Values should be in EUR per kWh. Index has to be pd.DateTimeIndex.
             eeg_prices (pd.Series): The EEG prices for the optimization. Values should be in EUR per kWh. Index has to be pd.DateTimeIndex.
-            community_market_prices (pd.Series): The community market prices for the optimization. Values should be in EUR per kWh. Index has to be pd.DateTimeIndex.
+            community_market_prices (dict[str, pd.Series] | None): Community market prices per city. ``None`` or an empty dict disables the community market (flows indexed by ``my_city`` at zero). Otherwise keys must be present in ``grid_fee_between_cities``. Values in EUR per kWh with pd.DateTimeIndex.
             wholesale_market_prices (pd.Series): The wholesale market prices for the optimization. Values should be in EUR per kWh. Index has to be pd.DateTimeIndex.
             hours_per_timestep (int | float): Hours per timesteps, e. g. 0.25 equals quarter hour.
             storage_use_cases (list[str]): The use cases for energy storage. Allowed values are "eeg", "wholesale", "community", "home"
@@ -91,7 +90,6 @@ class EnergyCostCalculator:
             my_city (str): City of the prosumer. Must be a key in ``grid_fee_between_cities``. Default is "aachen".
             grid_fee_between_cities (dict[str, dict[str, float]]): Grid fees in EUR/kWh for energy transferred between cities. Default is DEFAULT_GRID_FEE_BETWEEN_CITIES.
             storage_city (str | None): City where the storage is located. Defaults to ``my_city``.
-            community_city (str | None): City of the community market. Defaults to ``my_city``.
             eeg_eligible (bool): Whether the storage is eligible for EEG. Default is True.
             goal (str): The goal of the optimization. Allowed values are "max_cashflow" and "max_green_energy". Default is "max_cashflow".
             discharge_penalty_per_kwh (float): The discharge penalty per kWh in EUR. Default is 1e-6.
@@ -109,7 +107,6 @@ class EnergyCostCalculator:
         self.demand = demand
         self.supplier_prices = supplier_prices.copy()
         self.eeg_prices = eeg_prices.copy()
-        self.community_market_prices = community_market_prices.copy()
         self.wholesale_market_prices = wholesale_market_prices.copy()
         self.solar_generation = solar_generation.copy()
         self.demand = demand.copy()
@@ -127,16 +124,20 @@ class EnergyCostCalculator:
         self.allow_storage_to_community = allow_storage_to_community
         self.allow_community_to_storage = allow_community_to_storage
         self.wholesale_fee = wholesale_fee
-        self.my_city = self._normalize_city(my_city)
-        self.grid_fee_between_cities = self._prepare_grid_fee_between_cities(
+        self.grid_fee_between_cities = self.__prepare_grid_fee_between_cities__(
             grid_fee_between_cities
         )
-        self.community_market_city = self._normalize_city(
-            community_market_city if community_market_city is not None else self.my_city
+        self.my_city = self.__normalize_city__(
+            my_city, allowed_cities=set(self.grid_fee_between_cities.keys())
         )
-        self.storage_city = self._normalize_city(
-            storage_city if storage_city is not None else self.my_city
+        self.storage_city = self.__normalize_city__(
+            storage_city if storage_city is not None else self.my_city,
+            allowed_cities=set(self.grid_fee_between_cities.keys()),
         )
+        self.community_market_prices, self.community_cities = (
+            self.__prepare_community_market_prices__(community_market_prices)
+        )
+        self.has_community_market = bool(self.community_market_prices)
         self.allow_supplier_to_storage = True
         if self.storage_city != self.my_city:
             self.allow_supplier_to_storage = False
@@ -161,31 +162,68 @@ class EnergyCostCalculator:
         self.is_optimized = False
 
         self.model = pyo.ConcreteModel()
-        self.set_model_variables()
+        self.__set_model_variables__()
         self.set_model_constraints()
 
         if self.goal == "max_cashflow":
-            self.set_max_cashflow_objective()
+            self.__set_max_cashflow_objective__()
         elif self.goal == "max_green_energy":
             self.set_max_green_energy_objective()
 
-    def _normalize_city(self, city: str) -> str:
+    def __normalize_city__(
+        self, city: str, allowed_cities: set[str] | None = None
+    ) -> str:
         if not isinstance(city, str):
             raise TypeError("city names have to be strings.")
 
         normalized = city.strip().lower()
 
-        known_cities = DEFAULT_GRID_FEE_BETWEEN_CITIES.keys()
-        if normalized not in known_cities:
-            msg = f"Unknown city '{city}'. Allowed values: {sorted(known_cities)}"
+        if allowed_cities is None:
+            allowed_cities = set(DEFAULT_GRID_FEE_BETWEEN_CITIES.keys())
+
+        if normalized not in allowed_cities:
+            msg = f"Unknown city '{city}'. Allowed values: {sorted(allowed_cities)}"
             raise ValueError(msg)
 
         return normalized
 
-    def _prepare_grid_fee_between_cities(
+    def __prepare_community_market_prices__(
+        self, community_market_prices: dict[str, pd.Series] | None
+    ) -> tuple[dict[str, pd.Series], list[str]]:
+        if community_market_prices is None:
+            return {}, [self.my_city]
+        if not isinstance(community_market_prices, dict):
+            raise TypeError(
+                "community_market_prices has to be a dict[str, pd.Series] or None."
+            )
+        if not community_market_prices:
+            return {}, [self.my_city]
+
+        allowed_cities = set(self.grid_fee_between_cities.keys())
+        prepared: dict[str, pd.Series] = {}
+
+        for city, series in community_market_prices.items():
+            normalized_city = self.__normalize_city__(
+                city, allowed_cities=allowed_cities
+            )
+            if normalized_city in prepared:
+                raise ValueError(
+                    f"Duplicate community market city '{normalized_city}' in "
+                    "community_market_prices."
+                )
+            if not isinstance(series, pd.Series):
+                raise TypeError(
+                    f"community_market_prices['{city}'] has to be a pd.Series."
+                )
+            prepared[normalized_city] = series.copy()
+
+        return prepared, sorted(prepared.keys())
+
+    def __prepare_grid_fee_between_cities__(
         self,
         grid_fee_between_cities: dict[str, dict[str, float]] | None,
     ) -> dict[str, dict[str, float]]:
+        # this prevents modifying the default grid fees by reference
         normalized_fees = {
             from_city: row.copy()
             for from_city, row in DEFAULT_GRID_FEE_BETWEEN_CITIES.items()
@@ -198,20 +236,70 @@ class EnergyCostCalculator:
                 "grid_fee_between_cities has to be a dict[str, dict[str, float]] or None."
             )
 
+        allowed_cities = set(normalized_fees.keys())
         for from_city, to_fees in grid_fee_between_cities.items():
-            normalized_from = self._normalize_city(from_city)
+            normalized_from = self.__normalize_city__(
+                from_city, allowed_cities=allowed_cities
+            )
             if not isinstance(to_fees, dict):
                 raise TypeError(
                     f"grid_fee_between_cities['{from_city}'] has to be a dict[str, float]."
                 )
             for to_city, value in to_fees.items():
-                normalized_to = self._normalize_city(to_city)
+                normalized_to = self.__normalize_city__(
+                    to_city, allowed_cities=allowed_cities
+                )
                 normalized_fees[normalized_from][normalized_to] = float(value)
 
         return normalized_fees
 
-    def _grid_fee_rate(self, from_city: str, to_city: str) -> float:
+    def grid_fee_rate(self, from_city: str, to_city: str) -> float:
         return float(self.grid_fee_between_cities[from_city][to_city])
+
+    def __define_community_flow_var__(self, var_name: str, allow: bool) -> None:
+        if self.has_community_market and allow:
+            setattr(
+                self.model,
+                var_name,
+                pyo.Var(
+                    self.timesteps,
+                    self.community_cities,
+                    domain=pyo.NonNegativeReals,
+                ),
+            )
+        else:
+            setattr(
+                self.model,
+                var_name,
+                pyo.Var(
+                    self.timesteps,
+                    self.community_cities,
+                    domain=pyo.NonNegativeReals,
+                    bounds=(0, 0),
+                ),
+            )
+
+    def __community_flow_value__(
+        self,
+        var_name: str,
+        timestep: int,
+        *,
+        city: str,
+        use_values: bool = False,
+    ):
+        return self.__get_value__(
+            getattr(self.model, var_name)[timestep, city], use_values
+        )
+
+    def __community_flow_timestep_total__(
+        self, var_name: str, timestep: int, use_values: bool = False
+    ):
+        return sum(
+            self.__community_flow_value__(
+                var_name, timestep, city=city, use_values=use_values
+            )
+            for city in self.community_cities
+        )
 
     def __check_prepare_timeseries_indices__(self) -> None:
         """Check if all timeseries indices are valid."""
@@ -219,7 +307,6 @@ class EnergyCostCalculator:
             "solar_generation",
             "supplier_prices",
             "eeg_prices",
-            "community_market_prices",
             "wholesale_market_prices",
         ]
 
@@ -249,7 +336,26 @@ class EnergyCostCalculator:
             series.index = new_index
             setattr(self, name, series)
 
-    def set_model_variables(self):
+        if not self.has_community_market:
+            return
+
+        prepared_community: dict[str, pd.Series] = {}
+        for city in self.community_cities:
+            series = self.community_market_prices[city].copy()
+            label = f"community_market_prices['{city}']"
+            if not isinstance(series.index, pd.DatetimeIndex):
+                msg = f"Index of {label} has to be pd.DateTimeIndex!"
+                raise TypeError(msg)
+            if not series.index.equals(ref_index):
+                raise ValueError(
+                    f"All timeseries indices must be identical. Index of {label} "
+                    "does not equal index of demand."
+                )
+            series.index = new_index
+            prepared_community[city] = series
+        self.community_market_prices = prepared_community
+
+    def __set_model_variables__(self):
         log.info("Setting up model variables...")
 
         # storage level restrction
@@ -276,15 +382,9 @@ class EnergyCostCalculator:
             )
 
         # Selling PV on community market
-        if self.allow_pv_to_community:
-            self.model.pv_to_community = pyo.Var(
-                self.timesteps,
-                domain=pyo.NonNegativeReals,
-            )
-        else:
-            self.model.pv_to_community = pyo.Var(
-                self.timesteps, domain=pyo.NonNegativeReals, bounds=(0, 0)
-            )
+        self.__define_community_flow_var__(
+            "pv_to_community", self.allow_pv_to_community
+        )
 
         # PV energy to storage
         self.model.pv_to_storage = pyo.Var(
@@ -318,17 +418,9 @@ class EnergyCostCalculator:
             )
 
         # selling from storage on community
-        if self.allow_storage_to_community:
-            self.model.storage_to_community = pyo.Var(
-                self.timesteps,
-                domain=pyo.NonNegativeReals,
-            )
-        else:
-            self.model.storage_to_community = pyo.Var(
-                self.timesteps,
-                domain=pyo.NonNegativeReals,
-                bounds=(0, 0),
-            )
+        self.__define_community_flow_var__(
+            "storage_to_community", self.allow_storage_to_community
+        )
 
         # using energy from storage at home
         if "home" in self.storage_use_cases:
@@ -351,29 +443,14 @@ class EnergyCostCalculator:
             )
 
         # charging storage from community market
-        # remove bounds for activation
-        if self.allow_community_to_storage:
-            self.model.community_to_storage = pyo.Var(
-                self.timesteps,
-                domain=pyo.NonNegativeReals,
-            )
-        else:
-            self.model.community_to_storage = pyo.Var(
-                self.timesteps,
-                domain=pyo.NonNegativeReals,
-                bounds=(0, 0),
-            )
+        self.__define_community_flow_var__(
+            "community_to_storage", self.allow_community_to_storage
+        )
 
         # buying energy from community market
-        if self.allow_community_to_home:
-            self.model.community_to_home = pyo.Var(
-                self.timesteps,
-                domain=pyo.NonNegativeReals,
-            )
-        else:
-            self.model.community_to_home = pyo.Var(
-                self.timesteps, domain=pyo.NonNegativeReals, bounds=(0, 0)
-            )
+        self.__define_community_flow_var__(
+            "community_to_home", self.allow_community_to_home
+        )
 
         # charging storage from supplier
         if self.allow_supplier_to_storage:
@@ -397,11 +474,16 @@ class EnergyCostCalculator:
 
         # consumption must equal supply (from PV system, supplier, community market, PV system)
         def restrict_demand(model, timestep):
+            community_to_home = sum(
+                model.community_to_home[timestep, city]
+                for city in self.community_cities
+            )
+
             return (
                 model.storage_to_home[timestep]
                 + model.pv_to_home[timestep]
                 + model.supplier_to_home[timestep]
-                + model.community_to_home[timestep]
+                + community_to_home
                 == self.demand.iloc[timestep]
             )
 
@@ -411,6 +493,10 @@ class EnergyCostCalculator:
 
         # use of PV system must be smaller or equal than PV system generation
         def restrict_solar_gen(model, timestep):
+            pv_to_community = sum(
+                model.pv_to_community[timestep, city] for city in self.community_cities
+            )
+
             return (
                 sum(
                     model.pv_to_storage[timestep, use] for use in self.storage_use_cases
@@ -418,7 +504,7 @@ class EnergyCostCalculator:
                 + model.pv_to_eeg[timestep]
                 + model.pv_to_home[timestep]
                 + model.pv_to_wholesale[timestep]
-                + model.pv_to_community[timestep]
+                + pv_to_community
                 <= self.solar_generation.iloc[timestep]
             )
 
@@ -428,12 +514,17 @@ class EnergyCostCalculator:
 
         # energy flow TO storage must be smaller than c_rate * hours_per_timestep
         def restrict_storage_charge(model, timestep):
+            community_to_storage = sum(
+                model.community_to_storage[timestep, city]
+                for city in self.community_cities
+            )
+
             return (
                 sum(
                     model.pv_to_storage[timestep, use] for use in self.storage_use_cases
                 )
                 + model.wholesale_to_storage[timestep]
-                + model.community_to_storage[timestep]
+                + community_to_storage
                 + model.supplier_to_storage[timestep]
                 <= self.storage.c_rate * self.storage.volume * self.hours_per_timestep
             )
@@ -444,10 +535,15 @@ class EnergyCostCalculator:
 
         # energy flow FROM storage must be smaller than c_rate * hours_per_timestep
         def restrict_storage_discharge(model, timestep):
+            storage_to_community = sum(
+                model.storage_to_community[timestep, city]
+                for city in self.community_cities
+            )
+
             return (
                 +model.storage_to_eeg[timestep]
                 + model.storage_to_wholesale[timestep]
-                + model.storage_to_community[timestep]
+                + storage_to_community
                 + model.storage_to_home[timestep]
                 <= self.storage.c_rate * self.storage.volume * self.hours_per_timestep
             )
@@ -564,14 +660,19 @@ class EnergyCostCalculator:
         if "community" in self.storage_use_cases:
 
             def restrict_soc_community(model, timestep):
+                community_charge = sum(
+                    model.community_to_storage[timestep, city]
+                    for city in self.community_cities
+                )
+                community_discharge = sum(
+                    model.storage_to_community[timestep, city]
+                    for city in self.community_cities
+                )
                 if timestep == self.timesteps[0]:
                     return model.storage_level[
                         timestep, "community"
-                    ] == self.charge_efficiency * model.community_to_storage[
-                        timestep
-                    ] - (
-                        (1 / self.discharge_efficiency)
-                        * model.storage_to_community[timestep]
+                    ] == self.charge_efficiency * community_charge - (
+                        (1 / self.discharge_efficiency) * community_discharge
                     )
                 else:
                     previous_timestep = timestep - 1
@@ -579,11 +680,8 @@ class EnergyCostCalculator:
                         timestep, "community"
                     ] == model.storage_level[
                         previous_timestep, "community"
-                    ] + self.charge_efficiency * model.community_to_storage[
-                        timestep
-                    ] - (
-                        (1 / self.discharge_efficiency)
-                        * model.storage_to_community[timestep]
+                    ] + self.charge_efficiency * community_charge - (
+                        (1 / self.discharge_efficiency) * community_discharge
                     )
 
             self.model.soc_community_restriction = pyo.Constraint(
@@ -623,11 +721,30 @@ class EnergyCostCalculator:
 
         log.info("Model constraints set up successfully.")
 
-    def _get_value(self, var, use_values):
+    def __get_value__(self, var, use_values):
         """Helper to conditionally apply .value to a Pyomo variable."""
         return var.value if use_values else var
 
-    def set_max_cashflow_objective(self):
+    def __community_flow_series__(self, var_name: str) -> tuple[dict[str, list], list]:
+        """Per-city and aggregated timestep series for a community flow variable."""
+        model_var = getattr(self.model, var_name)
+        by_city = {
+            city: [
+                float(model_var[timestep, city].value or 0.0)
+                for timestep in self.timesteps
+            ]
+            for city in self.community_market_prices
+        }
+        aggregate = [
+            sum(
+                float(model_var[timestep, city].value or 0.0)
+                for city in self.community_cities
+            )
+            for timestep in self.timesteps
+        ]
+        return by_city, aggregate
+
+    def __set_max_cashflow_objective__(self):
         log.info("Setting up model objective...")
 
         cashflows = self.calculate_cashflows(use_values=False)
@@ -676,41 +793,52 @@ class EnergyCostCalculator:
         }
 
     def calculate_community_cashflow(self, use_values=False):
-        return (
-            sum(
-                self._get_value(self.model.storage_to_community[timestep], use_values)
-                * self.community_market_prices.loc[timestep]
-                * self.hours_per_timestep
-                for timestep in self.timesteps
+        if not self.has_community_market:
+            return 0.0
+
+        return sum(
+            (
+                self.__community_flow_value__(
+                    var_name="storage_to_community",
+                    timestep=timestep,
+                    city=city,
+                    use_values=use_values,
+                )
+                - self.__community_flow_value__(
+                    var_name="community_to_storage",
+                    timestep=timestep,
+                    city=city,
+                    use_values=use_values,
+                )
+                - self.__community_flow_value__(
+                    var_name="community_to_home",
+                    timestep=timestep,
+                    city=city,
+                    use_values=use_values,
+                )
             )
-            + sum(
-                self._get_value(self.model.pv_to_community[timestep], use_values)
-                * self.community_market_prices.loc[timestep]
-                * self.hours_per_timestep
-                for timestep in self.timesteps
+            * self.community_market_prices[city].loc[timestep]
+            * self.hours_per_timestep
+            + self.__community_flow_value__(
+                var_name="pv_to_community",
+                timestep=timestep,
+                city=city,
+                use_values=use_values,
             )
-            - sum(
-                self._get_value(self.model.community_to_storage[timestep], use_values)
-                * self.community_market_prices.loc[timestep]
-                * self.hours_per_timestep
-                for timestep in self.timesteps
-            )
-            - sum(
-                self._get_value(self.model.community_to_home[timestep], use_values)
-                * self.community_market_prices.loc[timestep]
-                * self.hours_per_timestep
-                for timestep in self.timesteps
-            )
+            * self.community_market_prices[city].loc[timestep]
+            * self.hours_per_timestep
+            for timestep in self.timesteps
+            for city in self.community_market_prices
         )
 
     def calculate_supplier_cashflow(self, use_values=False):
         return -(1 - epsilon) * sum(
-            self._get_value(self.model.supplier_to_storage[timestep], use_values)
+            self.__get_value__(self.model.supplier_to_storage[timestep], use_values)
             * self.supplier_prices.loc[timestep]
             * self.hours_per_timestep
             for timestep in self.timesteps
         ) - sum(
-            self._get_value(self.model.supplier_to_home[timestep], use_values)
+            self.__get_value__(self.model.supplier_to_home[timestep], use_values)
             * self.supplier_prices.loc[timestep]
             * self.hours_per_timestep
             for timestep in self.timesteps
@@ -718,12 +846,12 @@ class EnergyCostCalculator:
 
     def calculate_eeg_cashflow(self, use_values=False):
         return (1 - epsilon) * sum(
-            self._get_value(self.model.storage_to_eeg[timestep], use_values)
+            self.__get_value__(self.model.storage_to_eeg[timestep], use_values)
             * self.eeg_prices.loc[timestep]
             * self.hours_per_timestep
             for timestep in self.timesteps
         ) + sum(
-            self._get_value(self.model.pv_to_eeg[timestep], use_values)
+            self.__get_value__(self.model.pv_to_eeg[timestep], use_values)
             * self.eeg_prices.loc[timestep]
             * self.hours_per_timestep
             for timestep in self.timesteps
@@ -731,13 +859,13 @@ class EnergyCostCalculator:
 
     def calculate_wholesale_cashflow(self, use_values=False):
         wholesale_earnings = sum(
-            self._get_value(self.model.storage_to_wholesale[timestep], use_values)
+            self.__get_value__(self.model.storage_to_wholesale[timestep], use_values)
             * self.wholesale_market_prices.loc[timestep]
             * self.hours_per_timestep
             for timestep in self.timesteps
         )
         wholesale_costs = sum(
-            self._get_value(self.model.wholesale_to_storage[timestep], use_values)
+            self.__get_value__(self.model.wholesale_to_storage[timestep], use_values)
             * self.wholesale_market_prices.loc[timestep]
             * self.hours_per_timestep
             for timestep in self.timesteps
@@ -746,37 +874,70 @@ class EnergyCostCalculator:
 
     def calculate_grid_fee_cashflow(self, use_values=False):
         pv_charge = sum(
-            self._get_value(self.model.pv_to_storage[timestep, use], use_values)
+            self.__get_value__(self.model.pv_to_storage[timestep, use], use_values)
             for timestep in self.timesteps
             for use in self.storage_use_cases
             if use != "wholesale"
         )
         supplier_charge = sum(
-            self._get_value(self.model.supplier_to_storage[timestep], use_values)
-            for timestep in self.timesteps
-        )
-        community_charge = sum(
-            self._get_value(self.model.community_to_storage[timestep], use_values)
-            for timestep in self.timesteps
-        )
-        storage_to_community = sum(
-            self._get_value(self.model.storage_to_community[timestep], use_values)
+            self.__get_value__(self.model.supplier_to_storage[timestep], use_values)
             for timestep in self.timesteps
         )
         storage_to_home = sum(
-            self._get_value(self.model.storage_to_home[timestep], use_values)
+            self.__get_value__(self.model.storage_to_home[timestep], use_values)
             for timestep in self.timesteps
         )
 
         fee_energy = (
-            self._grid_fee_rate(self.my_city, self.storage_city) * pv_charge
-            + self._grid_fee_rate(self.my_city, self.storage_city) * supplier_charge
-            + self._grid_fee_rate(self.community_market_city, self.storage_city)
-            * community_charge
-            + self._grid_fee_rate(self.storage_city, self.community_market_city)
-            * storage_to_community
-            + self._grid_fee_rate(self.storage_city, self.my_city) * storage_to_home
+            self.grid_fee_rate(self.my_city, self.storage_city) * pv_charge
+            + self.grid_fee_rate(self.my_city, self.storage_city) * supplier_charge
+            + self.grid_fee_rate(self.storage_city, self.my_city) * storage_to_home
         )
+
+        for city in self.community_market_prices:
+            community_to_storage = sum(
+                self.__community_flow_value__(
+                    "community_to_storage",
+                    timestep,
+                    city=city,
+                    use_values=use_values,
+                )
+                for timestep in self.timesteps
+            )
+            storage_to_community = sum(
+                self.__community_flow_value__(
+                    "storage_to_community",
+                    timestep,
+                    city=city,
+                    use_values=use_values,
+                )
+                for timestep in self.timesteps
+            )
+            community_to_home = sum(
+                self.__community_flow_value__(
+                    "community_to_home",
+                    timestep,
+                    city=city,
+                    use_values=use_values,
+                )
+                for timestep in self.timesteps
+            )
+            pv_to_community = sum(
+                self.__community_flow_value__(
+                    "pv_to_community",
+                    timestep,
+                    city=city,
+                    use_values=use_values,
+                )
+                for timestep in self.timesteps
+            )
+            fee_energy = (
+                fee_energy
+                + self.grid_fee_rate(city, self.storage_city) * community_to_storage
+                + self.grid_fee_rate(self.storage_city, city) * storage_to_community
+                + self.grid_fee_rate(city, self.my_city) * community_to_home
+                + self.grid_fee_rate(self.my_city, city) * pv_to_community
+            )
 
         if isinstance(fee_energy, (int, float)) and fee_energy <= 0:
             return 0.0
@@ -785,10 +946,12 @@ class EnergyCostCalculator:
 
     def calculate_discharge_penalty(self, use_values=False):
         total_discharge = sum(
-            self._get_value(self.model.storage_to_eeg[timestep], use_values)
-            + self._get_value(self.model.storage_to_wholesale[timestep], use_values)
-            + self._get_value(self.model.storage_to_community[timestep], use_values)
-            + self._get_value(self.model.storage_to_home[timestep], use_values)
+            self.__get_value__(self.model.storage_to_eeg[timestep], use_values)
+            + self.__get_value__(self.model.storage_to_wholesale[timestep], use_values)
+            + self.__community_flow_timestep_total__(
+                "storage_to_community", timestep, use_values=use_values
+            )
+            + self.__get_value__(self.model.storage_to_home[timestep], use_values)
             for timestep in self.timesteps
         )
         return (
@@ -797,10 +960,12 @@ class EnergyCostCalculator:
 
     def calculate_cycle_cost_penalty(self, use_values=False):
         total_discharge = sum(
-            self._get_value(self.model.storage_to_eeg[timestep], use_values)
-            + self._get_value(self.model.storage_to_wholesale[timestep], use_values)
-            + self._get_value(self.model.storage_to_community[timestep], use_values)
-            + self._get_value(self.model.storage_to_home[timestep], use_values)
+            self.__get_value__(self.model.storage_to_eeg[timestep], use_values)
+            + self.__get_value__(self.model.storage_to_wholesale[timestep], use_values)
+            + self.__community_flow_timestep_total__(
+                "storage_to_community", timestep, use_values=use_values
+            )
+            + self.__get_value__(self.model.storage_to_home[timestep], use_values)
             for timestep in self.timesteps
         )
         return self.cycle_cost_per_kwh * total_discharge * self.hours_per_timestep
@@ -903,14 +1068,16 @@ class EnergyCostCalculator:
         return self.model.objective()
 
     def get_price_df(self) -> pd.DataFrame:
-        price_df = pd.DataFrame(
-            {
-                "supplier_prices": self.supplier_prices,
-                "eeg_prices": self.eeg_prices,
-                "community_market_prices": self.community_market_prices,
-                "wholesale_market_prices": self.wholesale_market_prices,
-            }
-        )
+        price_columns = {
+            "supplier_prices": self.supplier_prices,
+            "eeg_prices": self.eeg_prices,
+            "wholesale_market_prices": self.wholesale_market_prices,
+        }
+        if self.has_community_market:
+            for city, series in self.community_market_prices.items():
+                price_columns[f"community_market_prices_{city}"] = series
+
+        price_df = pd.DataFrame(price_columns)
         price_df.index = self.original_index.copy()
 
         return price_df
@@ -958,17 +1125,27 @@ class EnergyCostCalculator:
             energy_flows["pv_to_storage_for_eeg"] = 0
 
         if "community" in self.storage_use_cases:
-            energy_flows["storage_to_community"] = [
-                self.model.storage_to_community[timestep].value
-                for timestep in self.timesteps
-            ]
-            energy_flows["pv_to_community"] = [
-                self.model.pv_to_community[timestep].value
-                for timestep in self.timesteps
-            ]
+            for var_name in (
+                "storage_to_community",
+                "pv_to_community",
+                "community_to_storage",
+            ):
+                by_city, aggregate = self.__community_flow_series__(var_name)
+                for city, values in by_city.items():
+                    energy_flows[f"{var_name}_{city}"] = values
+                energy_flows[var_name] = aggregate
         else:
             energy_flows["storage_to_community"] = 0
             energy_flows["pv_to_community"] = 0
+            energy_flows["community_to_storage"] = 0
+
+        _, community_to_home = self.__community_flow_series__("community_to_home")
+        energy_flows["community_to_home"] = community_to_home
+        for city in self.community_market_prices:
+            energy_flows[f"community_to_home_{city}"] = [
+                float(self.model.community_to_home[timestep, city].value or 0.0)
+                for timestep in self.timesteps
+            ]
 
         if "home" in self.storage_use_cases:
             energy_flows["storage_to_home"] = [
@@ -1018,9 +1195,14 @@ class EnergyCostCalculator:
         demand_coverage["from_storage"] = [
             self.model.storage_to_home[timestep].value for timestep in self.timesteps
         ]
-        demand_coverage["from_community"] = [
-            self.model.community_to_home[timestep].value for timestep in self.timesteps
-        ]
+        _, demand_coverage["from_community"] = self.__community_flow_series__(
+            "community_to_home"
+        )
+        for city in self.community_market_prices:
+            demand_coverage[f"from_community_{city}"] = [
+                float(self.model.community_to_home[timestep, city].value or 0.0)
+                for timestep in self.timesteps
+            ]
 
         demand_coverage["index"] = self.original_index.copy()
         demand_coverage.set_index("index", inplace=True)
@@ -1035,9 +1217,12 @@ class EnergyCostCalculator:
 
         pv_usage["to_home"] = [self.model.pv_to_home[t].value for t in self.timesteps]
         pv_usage["to_eeg"] = [self.model.pv_to_eeg[t].value for t in self.timesteps]
-        pv_usage["to_community"] = [
-            self.model.pv_to_community[t].value for t in self.timesteps
-        ]
+        _, pv_usage["to_community"] = self.__community_flow_series__("pv_to_community")
+        for city in self.community_market_prices:
+            pv_usage[f"to_community_{city}"] = [
+                float(self.model.pv_to_community[t, city].value or 0.0)
+                for t in self.timesteps
+            ]
         pv_usage["to_wholesale"] = [
             self.model.pv_to_wholesale[t].value for t in self.timesteps
         ]
@@ -1407,15 +1592,18 @@ class EnergyCostCalculator:
         """Plot prices using plotly.express."""
         price_df = self.get_price_df()
 
-        df = price_df.reset_index().rename(
-            columns={
-                price_df.index.name or "index": "t",
-                "supplier_prices": "Grid prices",
-                "eeg_prices": "EEG prices",
-                "community_market_prices": "Community market prices",
-                "wholesale_market_prices": "Wholesale market prices",
-            }
-        )
+        rename_columns = {
+            price_df.index.name or "index": "t",
+            "supplier_prices": "Grid prices",
+            "eeg_prices": "EEG prices",
+            "wholesale_market_prices": "Wholesale market prices",
+        }
+        if self.has_community_market:
+            for city in self.community_cities:
+                rename_columns[f"community_market_prices_{city}"] = (
+                    f"Community market prices ({city})"
+                )
+        df = price_df.reset_index().rename(columns=rename_columns)
 
         df = df.drop(columns=[col for col in df.columns if (df[col] == 0).all()])
         long = df.melt(id_vars=[df.columns[0]], var_name="Price type", value_name="EUR")
