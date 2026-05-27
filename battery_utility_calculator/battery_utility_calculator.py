@@ -441,83 +441,6 @@ def calculate_multiple_storage_worth(
         return df
 
 
-def calculate_bidding_curve(
-    volumes_worth: pd.DataFrame,
-    buy_or_sell_side: Literal["buyer", "seller"],
-) -> pd.DataFrame:
-    """Calculates the bidding curve for a single product.
-
-    Args:
-        volumes_worth (pd.DataFrame): The volumes and their worth (values) in a pd.DataFrame. Columns should be "volume" and "worth".
-        buy_or_sell_side (Literal["buyer", "seller"]): Wether to calculate for buyer side or seller side.
-
-    Returns:
-        pd.DataFrame: A new DataFrame with the bidding curve.
-    """
-
-    df = volumes_worth.copy()
-
-    if "worth" not in df.columns:
-        raise KeyError("'worth' column not found!")
-    elif "volume" not in df.columns:
-        raise KeyError("'volume' column not found!")
-
-    if not is_numeric_dtype(df["worth"]):
-        try:
-            df["worth"] = df["worth"].astype(float)
-        except ValueError:
-            raise ValueError("Column 'worth' not numeric and cannot be converted!")
-
-    if not is_numeric_dtype(df["volume"]):
-        try:
-            df["volume"] = df["volume"].astype(float)
-        except ValueError:
-            raise ValueError("Column 'volume' not numeric and cannot be converted!")
-
-    for col in df.columns:
-        if not is_numeric_dtype(df[col]):
-            df.drop(columns=col, inplace=True)
-
-    if 0 not in df["worth"].values:
-        raise ValueError(
-            "Baseline volume is missing! There has to be one volume whose worth is 0!"
-        )
-
-    if buy_or_sell_side == "buyer":
-        df = df.sort_values("volume", ascending=True)
-    elif buy_or_sell_side == "seller":
-        df = df.sort_values("volume", ascending=False)
-    else:
-        raise ValueError("buy_or_sell_side has to be either 'buyer' or 'seller'")
-
-    use_orig_costs = "costs" in df.columns
-
-    if use_orig_costs:
-        original_costs = df["costs"].copy()
-
-    df = df.diff().dropna().reset_index(drop=True).abs()
-
-    if use_orig_costs:
-        df["costs"] = original_costs
-
-    df["cumulative_volume"] = df["volume"].cumsum()
-    df.rename(columns={"worth": "marginal_price"}, inplace=True)
-    df = df[df["volume"] != 0].reset_index(drop=True)
-    df["marginal_price_per_kwh"] = df["marginal_price"] / df["volume"]
-    return df[
-        ["volume", "cumulative_volume", "marginal_price", "marginal_price_per_kwh"]
-    ]
-
-
-_CASHFLOW_COMPONENT_ORDER = (
-    "community",
-    "supplier",
-    "eeg",
-    "wholesale",
-    "grid_fees",
-)
-
-
 def calculate_multiple_storage_worth_by_city(
     baseline_storage: Storage,
     storages_to_calculate: list[Storage],
@@ -612,7 +535,123 @@ def calculate_multiple_storage_worth_by_city(
                 "city",
             ]
         )
-    return pd.concat(rows, ignore_index=True)
+    df = pd.concat(rows, ignore_index=True)
+    df = df[
+        ~((df["city"] != my_city) & (df["volume"] == baseline_storage.volume))
+    ].reset_index(drop=True)
+    return df
+
+
+def calculate_bidding_curve(
+    volumes_worth: pd.DataFrame,
+    buy_or_sell_side: Literal["buyer", "seller"],
+) -> pd.DataFrame:
+    """Calculates the bidding curve for a single product.
+
+    Args:
+        volumes_worth (pd.DataFrame): The volumes and their worth (values) in a pd.DataFrame. Columns should be "volume" and "worth". If a "city" column is present, marginal steps are derived per city and combined into one DataFrame. Each city is its own exclusive bid group: ``cumulative_volume`` is restarted per city, and the clearing algorithm must enforce that only **one** city's bids can be awarded at a time (since the same physical storage is considered as alternative placements per city).
+        buy_or_sell_side (Literal["buyer", "seller"]): Wether to calculate for buyer side or seller side.
+
+    Returns:
+        pd.DataFrame: A new DataFrame with the bidding curve.
+    """
+
+    df = volumes_worth.copy()
+
+    if "worth" not in df.columns:
+        raise KeyError("'worth' column not found!")
+    elif "volume" not in df.columns:
+        raise KeyError("'volume' column not found!")
+
+    if not is_numeric_dtype(df["worth"]):
+        try:
+            df["worth"] = df["worth"].astype(float)
+        except ValueError:
+            raise ValueError("Column 'worth' not numeric and cannot be converted!")
+
+    if not is_numeric_dtype(df["volume"]):
+        try:
+            df["volume"] = df["volume"].astype(float)
+        except ValueError:
+            raise ValueError("Column 'volume' not numeric and cannot be converted!")
+
+    calc_per_city = "city" in df.columns
+    for col in list(df.columns):
+        if col == "city":
+            continue
+        if not is_numeric_dtype(df[col]):
+            df.drop(columns=col, inplace=True)
+
+    if 0 not in df["worth"].values:
+        raise ValueError(
+            "Baseline volume is missing! There has to be one volume whose worth is 0!"
+        )
+
+    if buy_or_sell_side == "buyer":
+        ascending = True
+    elif buy_or_sell_side == "seller":
+        ascending = False
+    else:
+        raise ValueError("buy_or_sell_side has to be either 'buyer' or 'seller'")
+
+    use_orig_costs = "costs" in df.columns
+    numeric_cols = [col for col in df.columns if col != "city"]
+
+    def _diff_to_marginal_steps(city_df: pd.DataFrame) -> pd.DataFrame:
+        city_df = city_df.sort_values("volume", ascending=ascending)
+        if use_orig_costs:
+            original_costs = city_df["costs"].copy()
+        stepped = city_df.diff().dropna().reset_index(drop=True).abs()
+        if use_orig_costs:
+            stepped["costs"] = original_costs
+        return stepped
+
+    if calc_per_city:
+        baseline_rows = df.loc[df["worth"] == 0, numeric_cols]
+        reference_baseline = baseline_rows.loc[baseline_rows["worth"].idxmax()]
+
+        city_curves = []
+        for city in volumes_worth["city"].unique():
+            city_df = df.loc[df["city"] == city, numeric_cols].copy()
+            if 0 not in city_df["worth"].values:
+                city_df = pd.concat(
+                    [reference_baseline.to_frame().T, city_df],
+                    ignore_index=True,
+                )
+            city_curve = _diff_to_marginal_steps(city_df)
+            city_curve["city"] = city
+            city_curves.append(city_curve)
+        df = pd.concat(city_curves, ignore_index=True)
+    else:
+        df = _diff_to_marginal_steps(df[numeric_cols])
+
+    df.rename(columns={"worth": "marginal_price"}, inplace=True)
+    df = df[df["volume"] != 0].reset_index(drop=True)
+    df["marginal_price_per_kwh"] = df["marginal_price"] / df["volume"]
+
+    if calc_per_city:
+        df["cumulative_volume"] = df.groupby("city", sort=False)["volume"].cumsum()
+    else:
+        df["cumulative_volume"] = df["volume"].cumsum()
+
+    output_cols = [
+        "volume",
+        "cumulative_volume",
+        "marginal_price",
+        "marginal_price_per_kwh",
+    ]
+    if calc_per_city:
+        output_cols.append("city")
+    return df[output_cols]
+
+
+_CASHFLOW_COMPONENT_ORDER = (
+    "community",
+    "supplier",
+    "eeg",
+    "wholesale",
+    "grid_fees",
+)
 
 
 def plot_multiple_storage_worth_cashflows(
