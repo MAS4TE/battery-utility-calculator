@@ -28,6 +28,11 @@ def test_calculate_storage_worth_without_community_market():
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     assert isinstance(worth, float)
 
@@ -46,6 +51,11 @@ def test_calculate_storage_worth():
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
 
     # ask for cashflows as well
@@ -60,6 +70,11 @@ def test_calculate_storage_worth():
         demand=pd.Series([1, 1, 1], index=idx),
         return_cashflows=True,
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     assert "baseline_cashflows" in result and "storage_to_calc_cashflows" in result
     assert "baseline_soc_ts" not in result and "storage_to_calc_soc_ts" not in result
@@ -85,6 +100,11 @@ def test_calculate_storage_worth():
         demand=pd.Series([1, 1, 1], index=idx),
         return_soc_timeseries=True,
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     assert "baseline_soc_ts" in soc_result and "storage_to_calc_soc_ts" in soc_result
 
@@ -103,6 +123,11 @@ def test_calculate_storage_worth_cycle_cost_default_compatibility():
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     worth_explicit_zero = calculate_storage_worth(
         baseline_storage=baseline_storage,
@@ -115,6 +140,11 @@ def test_calculate_storage_worth_cycle_cost_default_compatibility():
         demand=pd.Series([1, 1, 1], index=idx),
         cycle_cost_per_kwh=0.0,
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     worth_with_cycle_cost = calculate_storage_worth(
         baseline_storage=baseline_storage,
@@ -127,6 +157,11 @@ def test_calculate_storage_worth_cycle_cost_default_compatibility():
         demand=pd.Series([1, 1, 1], index=idx),
         cycle_cost_per_kwh=0.05,
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
 
     assert round(worth_default, 6) == round(worth_explicit_zero, 6)
@@ -149,6 +184,10 @@ def test_calculate_storage_worth_allow_pv_to_wholesale_changes_result():
         allow_pv_to_wholesale=False,
         return_cashflows=True,
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
     )
     result_enabled = calculate_storage_worth(
         baseline_storage=baseline_storage,
@@ -162,6 +201,10 @@ def test_calculate_storage_worth_allow_pv_to_wholesale_changes_result():
         allow_pv_to_wholesale=True,
         return_cashflows=True,
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
     )
 
     assert result_disabled["baseline_cashflows"]["wholesale"] == 0.0
@@ -182,6 +225,11 @@ def test_calculate_multiple_storage_worth():
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
 
     # request cashflow output too
@@ -196,6 +244,11 @@ def test_calculate_multiple_storage_worth():
         demand=pd.Series([1, 1, 1], index=idx),
         return_cashflows=True,
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     assert "baseline_cashflows" in df_with_cf
     assert isinstance(df_with_cf["storages_to_calc_cashflows"], dict)
@@ -217,6 +270,11 @@ def test_calculate_multiple_storage_worth():
         demand=pd.Series([1, 1, 1], index=idx),
         return_soc_timeseries=True,
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     assert "baseline_soc_ts" in df_with_soc
     assert isinstance(df_with_soc["storages_to_calc_soc_ts"], dict)
@@ -241,6 +299,11 @@ def test_calculate_multiple_storage_worth_cycle_cost_is_consistent():
         demand=pd.Series([1, 1, 1], index=idx),
         cycle_cost_per_kwh=0.0,
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     with_cycle_cost = calculate_multiple_storage_worth(
         baseline_storage=baseline_storage,
@@ -253,6 +316,11 @@ def test_calculate_multiple_storage_worth_cycle_cost_is_consistent():
         demand=pd.Series([1, 1, 1], index=idx),
         cycle_cost_per_kwh=0.05,
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
 
     # baseline row worth should always be zero
@@ -283,6 +351,10 @@ def test_calculate_multiple_storage_worth_applies_wholesale_fee_to_all_runs():
         allow_pv_to_wholesale=True,
         wholesale_fee=0.0,
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
     )
     high_fee = calculate_multiple_storage_worth(
         baseline_storage=baseline_storage,
@@ -296,6 +368,10 @@ def test_calculate_multiple_storage_worth_applies_wholesale_fee_to_all_runs():
         allow_pv_to_wholesale=True,
         wholesale_fee=0.9,
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
     )
 
     assert float(low_fee.loc[1, "costs"]) > float(high_fee.loc[1, "costs"])
@@ -380,6 +456,11 @@ def test_calculate_storage_worth_with_my_city_pass_through():
         my_city="aachen",
         storage_city="aachen",
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
     high_fee_worth = calculate_storage_worth(
         baseline_storage=baseline_storage,
@@ -393,6 +474,11 @@ def test_calculate_storage_worth_with_my_city_pass_through():
         my_city="aachen",
         storage_city="liege",
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
 
     assert high_fee_worth < low_fee_worth
@@ -406,7 +492,7 @@ def test_calculate_multiple_storage_worth_by_city():
     result_df = calculate_multiple_storage_worth_by_city(
         baseline_storage=baseline_storage,
         storages_to_calculate=storages_to_calc,
-        cities=cities,
+        cities_to_calculate=cities,
         eeg_prices=pd.Series([0, 0, 0], index=idx),
         wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
         community_market_prices={"aachen": pd.Series([0, 0, 0], index=idx)},
@@ -414,6 +500,11 @@ def test_calculate_multiple_storage_worth_by_city():
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
         solver="appsi_highs",
+        allow_community_to_home=False,
+        allow_community_to_storage=False,
+        allow_pv_to_community=False,
+        allow_storage_to_community=False,
+        allow_pv_to_wholesale=True,
     )
 
     assert "city" in result_df.columns
