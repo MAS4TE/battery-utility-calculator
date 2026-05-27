@@ -12,7 +12,7 @@ from plotly.graph_objects import Figure
 from battery_utility_calculator import EnergyCostCalculator as ECC
 from battery_utility_calculator import Storage
 
-DEFAULT_GRID_FEE_BETWEEN_CITIES = {
+DEFAULT_GRID_FEE_BETWEEN_LOCATIONS = {
     "juelich": {
         "juelich": 0.0,
         "aachen": 0.01,
@@ -61,10 +61,10 @@ def calculate_storage_worth(
     allow_wholesale_to_storage: bool = True,
     allow_storage_to_wholesale: bool = True,
     wholesale_fee: float = 0.3,
-    my_city: str = "aachen",
-    grid_fee_between_cities: dict[str, dict[str, float]]
-    | None = DEFAULT_GRID_FEE_BETWEEN_CITIES,
-    storage_city: str | None = None,
+    my_location: str = "aachen",
+    grid_fee_between_locations: dict[str, dict[str, float]]
+    | None = DEFAULT_GRID_FEE_BETWEEN_LOCATIONS,
+    storage_location: str | None = None,
     eeg_eligible: bool = True,
     goal: str = "max_cashflow",
     discharge_penalty_per_kwh: float = 1e-6,
@@ -83,7 +83,7 @@ def calculate_storage_worth(
         solar_generation (pd.Series): Solar generation timeseries. Values should be in kWh per hour (kW).
         supplier_prices (pd.Series): Grid prices timeseries. Values should be in EUR per kWh.
         eeg_prices (pd.Series): EEG prices timeseries. Values should be in EUR per kWh.
-        community_market_prices (dict[str, pd.Series] | None): Community market prices per city in EUR per kWh. ``None`` disables the community market.
+        community_market_prices (dict[str, pd.Series] | None): Community market prices per location in EUR per kWh. ``None`` disables the community market.
         wholesale_market_prices (pd.Series): Wholesale market timeseries. Values should be in EUR per kWh.
         hours_per_timestep (int | float, optional): Hours per timestep, e.g. 0.25 for 15-minute intervals. Defaults to 1.
         storage_use_cases (list[str], optional): Use cases for storage. Defaults to ECC default.
@@ -134,9 +134,9 @@ def calculate_storage_worth(
         allow_wholesale_to_storage=allow_wholesale_to_storage,
         allow_storage_to_wholesale=allow_storage_to_wholesale,
         wholesale_fee=wholesale_fee,
-        my_city=my_city,
-        grid_fee_between_cities=grid_fee_between_cities,
-        storage_city=storage_city,
+        my_location=my_location,
+        grid_fee_between_locations=grid_fee_between_locations,
+        storage_location=storage_location,
         eeg_eligible=eeg_eligible,
         goal=goal,
         discharge_penalty_per_kwh=discharge_penalty_per_kwh,
@@ -165,9 +165,9 @@ def calculate_storage_worth(
         allow_wholesale_to_storage=allow_wholesale_to_storage,
         allow_storage_to_wholesale=allow_storage_to_wholesale,
         wholesale_fee=wholesale_fee,
-        my_city=my_city,
-        grid_fee_between_cities=grid_fee_between_cities,
-        storage_city=storage_city,
+        my_location=my_location,
+        grid_fee_between_locations=grid_fee_between_locations,
+        storage_location=storage_location,
         eeg_eligible=eeg_eligible,
         goal=goal,
         discharge_penalty_per_kwh=discharge_penalty_per_kwh,
@@ -226,10 +226,10 @@ def calculate_multiple_storage_worth(
     allow_wholesale_to_storage: bool = True,
     allow_storage_to_wholesale: bool = True,
     wholesale_fee: float = 0.3,
-    my_city: str = "aachen",
-    grid_fee_between_cities: dict[str, dict[str, float]]
-    | None = DEFAULT_GRID_FEE_BETWEEN_CITIES,
-    storage_city: str | None = None,
+    my_location: str = "aachen",
+    grid_fee_between_locations: dict[str, dict[str, float]]
+    | None = DEFAULT_GRID_FEE_BETWEEN_LOCATIONS,
+    storage_location: str | None = None,
     eeg_eligible: bool = True,
     goal: str = "max_cashflow",
     discharge_penalty_per_kwh: float = 1e-6,
@@ -248,7 +248,7 @@ def calculate_multiple_storage_worth(
         solar_generation (pd.Series): Solar generation timeseries. Values should be in kWh per hour (kW).
         supplier_prices (pd.Series): Grid prices timeseries. Values should be in EUR per kWh.
         eeg_prices (pd.Series): EEG prices timeseries. Values should be in EUR per kWh.
-        community_market_prices (dict[str, pd.Series] | None): Community market prices per city in EUR per kWh. ``None`` disables the community market.
+        community_market_prices (dict[str, pd.Series] | None): Community market prices per location in EUR per kWh. ``None`` disables the community market.
         wholesale_market_prices (pd.Series): Wholesale market timeseries. Values should be in EUR per kWh.
         hours_per_timestep (int | float, optional): Hours per timestep. Defaults to 1.
         storage_use_cases (list[str], optional): Use cases for storage. Defaults to ECC default.
@@ -316,9 +316,9 @@ def calculate_multiple_storage_worth(
         allow_wholesale_to_storage=allow_wholesale_to_storage,
         allow_storage_to_wholesale=allow_storage_to_wholesale,
         wholesale_fee=wholesale_fee,
-        my_city=my_city,
-        grid_fee_between_cities=grid_fee_between_cities,
-        storage_city=storage_city,
+        my_location=my_location,
+        grid_fee_between_locations=grid_fee_between_locations,
+        storage_location=storage_location,
         eeg_eligible=eeg_eligible,
         goal=goal,
         discharge_penalty_per_kwh=discharge_penalty_per_kwh,
@@ -389,9 +389,9 @@ def calculate_multiple_storage_worth(
             allow_wholesale_to_storage=allow_wholesale_to_storage,
             allow_storage_to_wholesale=allow_storage_to_wholesale,
             wholesale_fee=wholesale_fee,
-            my_city=my_city,
-            grid_fee_between_cities=grid_fee_between_cities,
-            storage_city=storage_city,
+            my_location=my_location,
+            grid_fee_between_locations=grid_fee_between_locations,
+            storage_location=storage_location,
             eeg_eligible=eeg_eligible,
             goal=goal,
             discharge_penalty_per_kwh=discharge_penalty_per_kwh,
@@ -441,10 +441,10 @@ def calculate_multiple_storage_worth(
         return df
 
 
-def calculate_multiple_storage_worth_by_city(
+def calculate_multiple_storage_worth_by_location(
     baseline_storage: Storage,
     storages_to_calculate: list[Storage],
-    cities_to_calculate: list[str],
+    locations_to_calculate: list[str],
     demand: pd.Series,
     solar_generation: pd.Series,
     supplier_prices: pd.Series,
@@ -463,9 +463,9 @@ def calculate_multiple_storage_worth_by_city(
     allow_wholesale_to_storage: bool = True,
     allow_storage_to_wholesale: bool = True,
     wholesale_fee: float = 0.3,
-    my_city: str = "aachen",
-    grid_fee_between_cities: dict[str, dict[str, float]]
-    | None = DEFAULT_GRID_FEE_BETWEEN_CITIES,
+    my_location: str = "aachen",
+    grid_fee_between_locations: dict[str, dict[str, float]]
+    | None = DEFAULT_GRID_FEE_BETWEEN_LOCATIONS,
     eeg_eligible: bool = True,
     goal: str = "max_cashflow",
     discharge_penalty_per_kwh: float = 1e-6,
@@ -475,12 +475,12 @@ def calculate_multiple_storage_worth_by_city(
     return_cashflows: bool = False,
     solver: str = "gurobi",
 ) -> pd.DataFrame:
-    """Calculate storage worth for multiple storages across multiple cities.
+    """Calculate storage worth for multiple storages across multiple locations.
 
-    Returns one row per city and storage configuration (including baseline row).
+    Returns one row per location and storage configuration (including baseline row).
     """
     rows = []
-    for city in cities_to_calculate:
+    for location in locations_to_calculate:
         worth_result = calculate_multiple_storage_worth(
             baseline_storage=baseline_storage,
             storages_to_calculate=storages_to_calculate,
@@ -502,9 +502,9 @@ def calculate_multiple_storage_worth_by_city(
             allow_wholesale_to_storage=allow_wholesale_to_storage,
             allow_storage_to_wholesale=allow_storage_to_wholesale,
             wholesale_fee=wholesale_fee,
-            my_city=my_city,
-            grid_fee_between_cities=grid_fee_between_cities,
-            storage_city=city,
+            my_location=my_location,
+            grid_fee_between_locations=grid_fee_between_locations,
+            storage_location=location,
             eeg_eligible=eeg_eligible,
             goal=goal,
             discharge_penalty_per_kwh=discharge_penalty_per_kwh,
@@ -519,7 +519,7 @@ def calculate_multiple_storage_worth_by_city(
             if isinstance(worth_result, dict)
             else worth_result.copy()
         )
-        worth_df["city"] = city
+        worth_df["location"] = location
         rows.append(worth_df)
 
     if not rows:
@@ -532,12 +532,12 @@ def calculate_multiple_storage_worth_by_city(
                 "discharge_efficiency",
                 "costs",
                 "worth",
-                "city",
+                "location",
             ]
         )
     df = pd.concat(rows, ignore_index=True)
     df = df[
-        ~((df["city"] != my_city) & (df["volume"] == baseline_storage.volume))
+        ~((df["location"] != my_location) & (df["volume"] == baseline_storage.volume))
     ].reset_index(drop=True)
     return df
 
@@ -549,7 +549,7 @@ def calculate_bidding_curve(
     """Calculates the bidding curve for a single product.
 
     Args:
-        volumes_worth (pd.DataFrame): The volumes and their worth (values) in a pd.DataFrame. Columns should be "volume" and "worth". If a "city" column is present, marginal steps are derived per city and combined into one DataFrame. Each city is its own exclusive bid group: ``cumulative_volume`` is restarted per city, and the clearing algorithm must enforce that only **one** city's bids can be awarded at a time (since the same physical storage is considered as alternative placements per city).
+        volumes_worth (pd.DataFrame): The volumes and their worth (values) in a pd.DataFrame. Columns should be "volume" and "worth". If a "location" column is present, marginal steps are derived per location and combined into one DataFrame. ``cumulative_volume`` is restarted per location. Rows with the same marginal ``volume`` share an ``exclusive_id`` across locations (mutually exclusive bids for the same capacity increment).
         buy_or_sell_side (Literal["buyer", "seller"]): Wether to calculate for buyer side or seller side.
 
     Returns:
@@ -575,9 +575,9 @@ def calculate_bidding_curve(
         except ValueError:
             raise ValueError("Column 'volume' not numeric and cannot be converted!")
 
-    calc_per_city = "city" in df.columns
+    calc_per_location = "location" in df.columns
     for col in list(df.columns):
-        if col == "city":
+        if col == "location":
             continue
         if not is_numeric_dtype(df[col]):
             df.drop(columns=col, inplace=True)
@@ -595,33 +595,33 @@ def calculate_bidding_curve(
         raise ValueError("buy_or_sell_side has to be either 'buyer' or 'seller'")
 
     use_orig_costs = "costs" in df.columns
-    numeric_cols = [col for col in df.columns if col != "city"]
+    numeric_cols = [col for col in df.columns if col != "location"]
 
-    def _diff_to_marginal_steps(city_df: pd.DataFrame) -> pd.DataFrame:
-        city_df = city_df.sort_values("volume", ascending=ascending)
+    def _diff_to_marginal_steps(location_df: pd.DataFrame) -> pd.DataFrame:
+        location_df = location_df.sort_values("volume", ascending=ascending)
         if use_orig_costs:
-            original_costs = city_df["costs"].copy()
-        stepped = city_df.diff().dropna().reset_index(drop=True).abs()
+            original_costs = location_df["costs"].copy()
+        stepped = location_df.diff().dropna().reset_index(drop=True).abs()
         if use_orig_costs:
             stepped["costs"] = original_costs
         return stepped
 
-    if calc_per_city:
+    if calc_per_location:
         baseline_rows = df.loc[df["worth"] == 0, numeric_cols]
         reference_baseline = baseline_rows.loc[baseline_rows["worth"].idxmax()]
 
-        city_curves = []
-        for city in volumes_worth["city"].unique():
-            city_df = df.loc[df["city"] == city, numeric_cols].copy()
-            if 0 not in city_df["worth"].values:
-                city_df = pd.concat(
-                    [reference_baseline.to_frame().T, city_df],
+        location_curves = []
+        for location in volumes_worth["location"].unique():
+            location_df = df.loc[df["location"] == location, numeric_cols].copy()
+            if 0 not in location_df["worth"].values:
+                location_df = pd.concat(
+                    [reference_baseline.to_frame().T, location_df],
                     ignore_index=True,
                 )
-            city_curve = _diff_to_marginal_steps(city_df)
-            city_curve["city"] = city
-            city_curves.append(city_curve)
-        df = pd.concat(city_curves, ignore_index=True)
+            location_curve = _diff_to_marginal_steps(location_df)
+            location_curve["location"] = location
+            location_curves.append(location_curve)
+        df = pd.concat(location_curves, ignore_index=True)
     else:
         df = _diff_to_marginal_steps(df[numeric_cols])
 
@@ -629,8 +629,9 @@ def calculate_bidding_curve(
     df = df[df["volume"] != 0].reset_index(drop=True)
     df["marginal_price_per_kwh"] = df["marginal_price"] / df["volume"]
 
-    if calc_per_city:
-        df["cumulative_volume"] = df.groupby("city", sort=False)["volume"].cumsum()
+    if calc_per_location:
+        df["cumulative_volume"] = df.groupby("location", sort=False)["volume"].cumsum()
+        df["exclusive_id"] = "excl_" + df["cumulative_volume"].astype(str)
     else:
         df["cumulative_volume"] = df["volume"].cumsum()
 
@@ -640,8 +641,8 @@ def calculate_bidding_curve(
         "marginal_price",
         "marginal_price_per_kwh",
     ]
-    if calc_per_city:
-        output_cols.append("city")
+    if calc_per_location:
+        output_cols.extend(["location", "exclusive_id"])
     return df[output_cols]
 
 

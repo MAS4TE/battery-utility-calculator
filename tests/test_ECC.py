@@ -22,12 +22,12 @@ idx_5 = pd.date_range("2025-01-01", freq="h", periods=5)
 
 def community_prices(
     index: pd.DatetimeIndex,
-    cities: tuple[str, ...] = ("aachen",),
+    locations: tuple[str, ...] = ("aachen",),
     values: list[float] | None = None,
 ) -> dict[str, pd.Series]:
     if values is None:
         values = [0.0] * len(index)
-    return {city: pd.Series(values, index=index) for city in cities}
+    return {location: pd.Series(values, index=index) for location in locations}
 
 
 def test_ECC_baseline():
@@ -788,8 +788,8 @@ def test_ECC_grid_fees_reduce_non_wholesale_cashflow():
         solar_generation=pd.Series([1, 0, 0], index=idx_3),
         demand=pd.Series([0, 0, 0], index=idx_3),
         allow_pv_to_wholesale=False,
-        my_city="aachen",
-        storage_city="aachen",
+        my_location="aachen",
+        storage_location="aachen",
         allow_community_to_home=False,
         allow_community_to_storage=False,
         allow_pv_to_community=False,
@@ -808,9 +808,9 @@ def test_ECC_grid_fees_reduce_non_wholesale_cashflow():
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([0, 0, 1], index=idx_3),
         allow_pv_to_wholesale=False,
-        my_city="aachen",
-        storage_city="aachen",
-        grid_fee_between_cities={
+        my_location="aachen",
+        storage_location="aachen",
+        grid_fee_between_locations={
             "aachen": {"aachen": 0.05},
         },
         allow_community_to_home=False,
@@ -839,8 +839,8 @@ def test_ECC_grid_fees_do_not_affect_wholesale_only_operations():
 
     no_fee = EnergyCostCalculator(
         **kwargs,
-        my_city="aachen",
-        storage_city="aachen",
+        my_location="aachen",
+        storage_location="aachen",
         allow_community_to_home=False,
         allow_community_to_storage=False,
         allow_pv_to_community=False,
@@ -849,9 +849,9 @@ def test_ECC_grid_fees_do_not_affect_wholesale_only_operations():
     )
     with_fee = EnergyCostCalculator(
         **kwargs,
-        my_city="aachen",
-        storage_city="liege",
-        grid_fee_between_cities={
+        my_location="aachen",
+        storage_location="liege",
+        grid_fee_between_locations={
             "aachen": {"liege": 5.0},
         },
         allow_community_to_home=False,
@@ -868,9 +868,9 @@ def test_ECC_grid_fees_do_not_affect_wholesale_only_operations():
     assert np.isclose(with_fee.get_cashflows()["grid_fees"], 0.0)
 
 
-def test_ECC_grid_city_ordering_changes_costs():
-    costs_by_storage_city = {}
-    for storage_city in ["aachen", "heerlen", "liege", "juelich"]:
+def test_ECC_grid_location_ordering_changes_costs():
+    costs_by_storage_location = {}
+    for storage_location in ["aachen", "heerlen", "liege", "juelich"]:
         calc = EnergyCostCalculator(
             storage=Storage(
                 id=0, c_rate=1, volume=1, charge_efficiency=1, discharge_efficiency=1
@@ -882,19 +882,21 @@ def test_ECC_grid_city_ordering_changes_costs():
             solar_generation=pd.Series([1, 0, 0], index=idx_3),
             demand=pd.Series([0, 0, 1], index=idx_3),
             allow_pv_to_wholesale=False,
-            my_city="aachen",
-            storage_city=storage_city,
+            my_location="aachen",
+            storage_location=storage_location,
             allow_community_to_home=False,
             allow_community_to_storage=False,
             allow_pv_to_community=False,
             allow_storage_to_community=False,
         )
-        costs_by_storage_city[storage_city] = calc.optimize(solver="appsi_highs")
+        costs_by_storage_location[storage_location] = calc.optimize(
+            solver="appsi_highs"
+        )
 
-    # Storage in my_city avoids any inter-city grid fees.
-    assert costs_by_storage_city["aachen"] >= costs_by_storage_city["juelich"]
-    assert costs_by_storage_city["aachen"] >= costs_by_storage_city["heerlen"]
-    assert costs_by_storage_city["aachen"] >= costs_by_storage_city["liege"]
+    # Storage in my_location avoids any inter-location grid fees.
+    assert costs_by_storage_location["aachen"] >= costs_by_storage_location["juelich"]
+    assert costs_by_storage_location["aachen"] >= costs_by_storage_location["heerlen"]
+    assert costs_by_storage_location["aachen"] >= costs_by_storage_location["liege"]
 
 
 def test_ECC_disables_supplier_to_storage_for_non_local_supplier(caplog):
@@ -907,8 +909,8 @@ def test_ECC_disables_supplier_to_storage_for_non_local_supplier(caplog):
         supplier_prices=pd.Series([0, 1, 1], index=idx_3),
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([1, 1, 1], index=idx_3),
-        my_city="aachen",
-        storage_city="liege",
+        my_location="aachen",
+        storage_location="liege",
         allow_community_to_home=False,
         allow_community_to_storage=False,
         allow_pv_to_community=False,
@@ -920,18 +922,20 @@ def test_ECC_disables_supplier_to_storage_for_non_local_supplier(caplog):
 
     assert np.allclose(flows["supplier_to_storage"], 0.0)
     assert any(
-        "Disabled supplier_to_storage use-case because storage_city" in rec.message
+        "Disabled supplier_to_storage use-case because storage_location" in rec.message
         for rec in caplog.records
     )
 
 
-def test_ECC_community_city_not_in_grid_fee_raises():
-    with pytest.raises(ValueError, match="Unknown city"):
+def test_ECC_community_location_not_in_grid_fee_raises():
+    with pytest.raises(ValueError, match="Unknown location"):
         EnergyCostCalculator(
             storage=Storage(id=0, c_rate=1, volume=0),
             eeg_prices=pd.Series([0, 0, 0], index=idx_3),
             wholesale_market_prices=pd.Series([0, 0, 0], index=idx_3),
-            community_market_prices={"unknown_city": pd.Series([0, 0, 0], index=idx_3)},
+            community_market_prices={
+                "unknown_location": pd.Series([0, 0, 0], index=idx_3)
+            },
             supplier_prices=pd.Series([0, 0, 0], index=idx_3),
             solar_generation=pd.Series([0, 0, 0], index=idx_3),
             demand=pd.Series([0, 0, 0], index=idx_3),
@@ -943,7 +947,7 @@ def test_ECC_community_city_not_in_grid_fee_raises():
         )
 
 
-def test_ECC_multi_city_community_routes_by_price():
+def test_ECC_multi_location_community_routes_by_price():
     calc = EnergyCostCalculator(
         storage=Storage(id=0, c_rate=1, volume=0),
         eeg_prices=pd.Series([0, 0, 0], index=idx_3),
@@ -956,8 +960,8 @@ def test_ECC_multi_city_community_routes_by_price():
         solar_generation=pd.Series([1, 0, 0], index=idx_3),
         demand=pd.Series([0, 0, 0], index=idx_3),
         allow_pv_to_community=True,
-        my_city="aachen",
-        grid_fee_between_cities={
+        my_location="aachen",
+        grid_fee_between_locations={
             "aachen": {"aachen": 0.0, "liege": 0.01},
             "liege": {"aachen": 0.01, "liege": 0.0},
         },
@@ -986,9 +990,9 @@ def test_ECC_remote_storage():
         supplier_prices=pd.Series([10, 10, 10], index=idx_3),
         solar_generation=pd.Series([1, 0, 0], index=idx_3),
         demand=pd.Series([0, 0, 1], index=idx_3),
-        my_city="aachen",
-        storage_city="liege",
-        grid_fee_between_cities={
+        my_location="aachen",
+        storage_location="liege",
+        grid_fee_between_locations={
             "aachen": {"aachen": 0.0, "liege": 1},
             "liege": {"aachen": 1, "liege": 0.0},
         },
@@ -1054,11 +1058,11 @@ def test_ECC_remote_storage_remote_community_market():
         supplier_prices=pd.Series([50, 50, 50], index=idx_3),
         solar_generation=pd.Series([0, 0, 0], index=idx_3),
         demand=pd.Series([0, 0, 1], index=idx_3),
-        my_city="aachen",
-        storage_city="liege",
+        my_location="aachen",
+        storage_location="liege",
         allow_community_to_storage=True,
         allow_community_to_home=True,
-        grid_fee_between_cities={
+        grid_fee_between_locations={
             "aachen": {"aachen": 0.0, "liege": 1, "heerlen": 1},
             "liege": {"aachen": 1, "liege": 0.0, "heerlen": 2},
             "heerlen": {"aachen": 1, "heerlen": 0.0, "liege": 2},

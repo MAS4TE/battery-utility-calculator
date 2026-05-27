@@ -6,10 +6,10 @@ SPDX-License-Identifier: MIT
 
 # Battery Utility Calculator
 
-This tool provides a calculation of the utility a storage provides to an electricity consumer.
+This tool provides a calculation of the utility a storage provides to an electrilocation consumer.
 
 The utility is calculated by optimizing the storage dispatch and comparing the utility of the storage vs without it.
-Iterating over different storage volumes can create a price curve of the stepwise utility each additional capacity provides.
+Iterating over different storage volumes can create a price curve of the stepwise utility each additional capalocation provides.
 Such values can be used in bidding projects or to investigate whether an additional storage is beneficial.
 
 ## Install & run tests
@@ -110,7 +110,7 @@ Notes about the optimizer
 
 The core optimizer is `EnergyCostCalculator` (in `battery_utility_calculator/energy_costs_calculator.py`). It builds a Pyomo `ConcreteModel` with variables like `pv_to_storage[t,use]` and per-use-case storage state-of-charge variables. The objective maximizes summed cashflows (community + supplier + EEG + wholesale). If you need lower-level control or plotting, instantiate `EnergyCostCalculator` directly and call `optimize(solver=...)`.
 
-`community_market_prices` defaults to `None` (no community market). Pass a dict keyed by city name when community trading should be modelled, for example `{"aachen": pd.Series(...)}`.
+`community_market_prices` defaults to `None` (no community market). Pass a dict keyed by location name when community trading should be modelled, for example `{"aachen": pd.Series(...)}`.
 
 ### Optional cycle-cost parameter
 
@@ -120,7 +120,7 @@ This value is subtracted from the objective proportionally to storage throughput
 
 Rule-of-thumb range for home storage (LFP, 2026 market snapshots):
 
-- Cost basis: roughly `250-450 EUR/kWh` installed storage capacity
+- Cost basis: roughly `250-450 EUR/kWh` installed storage capalocation
 - Lifetime: roughly `5,000-10,000` full cycles
 - Derived cycle cost range: about `0.025-0.09 EUR/kWh` discharged
 - Typical working value for scenario analysis: `~0.05 EUR/kWh`

@@ -9,7 +9,7 @@ from battery_utility_calculator.battery_utility_calculator import (
     Storage,
     calculate_bidding_curve,
     calculate_multiple_storage_worth,
-    calculate_multiple_storage_worth_by_city,
+    calculate_multiple_storage_worth_by_location,
     calculate_storage_worth,
     plot_multiple_storage_worth_cashflows,
 )
@@ -440,10 +440,10 @@ def test_calculate_bidding_curve_seller():
     ).all()
 
 
-def test_calculate_bidding_curve_per_city_buyer():
+def test_calculate_bidding_curve_per_location_buyer():
     volume_worths = pd.DataFrame(
         {
-            "city": ["aachen", "aachen", "aachen", "juelich", "juelich", "juelich"],
+            "location": ["aachen", "aachen", "aachen", "juelich", "juelich", "juelich"],
             "volume": [0, 1, 2, 0, 1, 2],
             "worth": [0, 5, 7, 0, 3, 6],
         }
@@ -458,25 +458,34 @@ def test_calculate_bidding_curve_per_city_buyer():
         "cumulative_volume",
         "marginal_price",
         "marginal_price_per_kwh",
-        "city",
+        "location",
+        "exclusive_id",
     ]
-    assert set(bidding_curve["city"]) == {"aachen", "juelich"}
+    assert set(bidding_curve["location"]) == {"aachen", "juelich"}
 
-    aachen = bidding_curve[bidding_curve["city"] == "aachen"].reset_index(drop=True)
+    aachen = bidding_curve[bidding_curve["location"] == "aachen"].reset_index(drop=True)
+    print(aachen)
     assert (aachen["volume"] == [1, 1]).all()
     assert (aachen["marginal_price"] == [5, 2]).all()
     assert (aachen["cumulative_volume"] == [1, 2]).all()
+    assert (aachen["exclusive_id"] == ["excl_1.0", "excl_2.0"]).all()
 
-    juelich = bidding_curve[bidding_curve["city"] == "juelich"].reset_index(drop=True)
+    juelich = bidding_curve[bidding_curve["location"] == "juelich"].reset_index(
+        drop=True
+    )
     assert (juelich["volume"] == [1, 1]).all()
     assert (juelich["marginal_price"] == [3, 3]).all()
     assert (juelich["cumulative_volume"] == [1, 2]).all()
+    assert (juelich["exclusive_id"] == ["excl_1.0", "excl_2.0"]).all()
+
+    print(bidding_curve)
+    assert (bidding_curve.groupby("volume")["exclusive_id"].nunique() == 2).all()
 
 
-def test_calculate_bidding_curve_per_city_seller():
+def test_calculate_bidding_curve_per_location_seller():
     volume_worths = pd.DataFrame(
         {
-            "city": ["aachen", "aachen", "aachen", "juelich", "juelich", "juelich"],
+            "location": ["aachen", "aachen", "aachen", "juelich", "juelich", "juelich"],
             "volume": [0, 1, 2, 0, 1, 2],
             "worth": [0, 5, 7, 0, 3, 6],
         }
@@ -491,26 +500,29 @@ def test_calculate_bidding_curve_per_city_seller():
         "cumulative_volume",
         "marginal_price",
         "marginal_price_per_kwh",
-        "city",
+        "location",
+        "exclusive_id",
     ]
-    assert set(bidding_curve["city"]) == {"aachen", "juelich"}
+    assert set(bidding_curve["location"]) == {"aachen", "juelich"}
 
-    aachen = bidding_curve[bidding_curve["city"] == "aachen"].reset_index(drop=True)
+    aachen = bidding_curve[bidding_curve["location"] == "aachen"].reset_index(drop=True)
     assert (aachen["volume"] == [1, 1]).all()
     # Adjusted expected values for seller side to match actual marginal prices
     assert (aachen["marginal_price"] == [2, 5]).all()
     assert (aachen["cumulative_volume"] == [1, 2]).all()
 
-    juelich = bidding_curve[bidding_curve["city"] == "juelich"].reset_index(drop=True)
+    juelich = bidding_curve[bidding_curve["location"] == "juelich"].reset_index(
+        drop=True
+    )
     assert (juelich["volume"] == [1, 1]).all()
     assert (juelich["marginal_price"] == [3, 3]).all()
     assert (juelich["cumulative_volume"] == [1, 2]).all()
 
 
-def test_calculate_bidding_curve_per_city_missing_baseline():
+def test_calculate_bidding_curve_per_location_missing_baseline():
     volume_worths = pd.DataFrame(
         {
-            "city": ["aachen", "aachen", "juelich", "juelich"],
+            "location": ["aachen", "aachen", "juelich", "juelich"],
             "volume": [0, 1, 1, 2],
             "worth": [0, 5, 3, 6],
         }
@@ -520,13 +532,15 @@ def test_calculate_bidding_curve_per_city_missing_baseline():
         volumes_worth=volume_worths, buy_or_sell_side="buyer"
     )
 
-    juelich = bidding_curve[bidding_curve["city"] == "juelich"].reset_index(drop=True)
+    juelich = bidding_curve[bidding_curve["location"] == "juelich"].reset_index(
+        drop=True
+    )
     assert (juelich["volume"] == [1, 1]).all()
     assert (juelich["marginal_price"] == [3, 3]).all()
     assert (juelich["cumulative_volume"] == [1, 2]).all()
 
 
-def test_calculate_storage_worth_with_my_city_pass_through():
+def test_calculate_storage_worth_with_my_location_pass_through():
     baseline_storage = Storage(0, 1, 0, 1)
     storage_to_calc = Storage(1, 1, 1, 1)
 
@@ -539,8 +553,8 @@ def test_calculate_storage_worth_with_my_city_pass_through():
         supplier_prices=pd.Series([0, 1, 1], index=idx),
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
-        my_city="aachen",
-        storage_city="aachen",
+        my_location="aachen",
+        storage_location="aachen",
         solver="appsi_highs",
         allow_community_to_home=False,
         allow_community_to_storage=False,
@@ -557,8 +571,8 @@ def test_calculate_storage_worth_with_my_city_pass_through():
         supplier_prices=pd.Series([0, 1, 1], index=idx),
         solar_generation=pd.Series([0, 0, 0], index=idx),
         demand=pd.Series([1, 1, 1], index=idx),
-        my_city="aachen",
-        storage_city="liege",
+        my_location="aachen",
+        storage_location="liege",
         solver="appsi_highs",
         allow_community_to_home=False,
         allow_community_to_storage=False,
@@ -570,18 +584,20 @@ def test_calculate_storage_worth_with_my_city_pass_through():
     assert high_fee_worth < low_fee_worth
 
 
-def test_calculate_multiple_storage_worth_by_city():
+def test_calculate_multiple_storage_worth_by_location():
     baseline_storage = Storage(0, 1, 0, 1)
     storages_to_calc = [Storage(1, 1, 1, 1), Storage(2, 1, 2, 1)]
-    cities = ["aachen", "juelich"]
+    locations = ["aachen", "juelich"]
 
-    # Provide community prices for both cities to match grid_fee keys
-    community_market_prices = {city: pd.Series([0, 0, 0], index=idx) for city in cities}
+    # Provide community prices for both locations to match grid_fee keys
+    community_market_prices = {
+        location: pd.Series([0, 0, 0], index=idx) for location in locations
+    }
 
-    result_df = calculate_multiple_storage_worth_by_city(
+    result_df = calculate_multiple_storage_worth_by_location(
         baseline_storage=baseline_storage,
         storages_to_calculate=storages_to_calc,
-        cities_to_calculate=cities,
+        locations_to_calculate=locations,
         eeg_prices=pd.Series([0, 0, 0], index=idx),
         wholesale_market_prices=pd.Series([0, 0, 0], index=idx),
         community_market_prices=community_market_prices,
@@ -596,7 +612,7 @@ def test_calculate_multiple_storage_worth_by_city():
         allow_pv_to_wholesale=True,
     )
 
-    assert "city" in result_df.columns
-    assert set(result_df["city"].unique()) == set(cities)
-    # baseline + 2 storages for each city
-    assert len(result_df) == len(cities) * len(storages_to_calc) + 1
+    assert "location" in result_df.columns
+    assert set(result_df["location"].unique()) == set(locations)
+    # baseline + 2 storages for each location
+    assert len(result_df) == len(locations) * len(storages_to_calc) + 1
