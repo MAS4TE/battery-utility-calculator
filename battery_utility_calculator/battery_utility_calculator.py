@@ -342,6 +342,7 @@ def calculate_multiple_storage_worth(
             "discharge_efficiency",
             "costs",
             "worth",
+            "location",
         ]
     )
     df.loc[
@@ -354,6 +355,7 @@ def calculate_multiple_storage_worth(
             "discharge_efficiency",
             "costs",
             "worth",
+            "location",
         ],
     ] = [
         baseline_storage.id,
@@ -363,6 +365,7 @@ def calculate_multiple_storage_worth(
         baseline_storage.discharge_efficiency,
         baseline_costs,
         0,
+        my_location,
     ]
 
     storages_charge = {}
@@ -408,6 +411,7 @@ def calculate_multiple_storage_worth(
         stor_df["discharge_efficiency"] = [storage.discharge_efficiency]
         stor_df["costs"] = [costs]
         stor_df["worth"] = [storage_worth]
+        stor_df["location"] = [my_location]
 
         df = pd.concat([df, stor_df], ignore_index=True)
         df["worth"] = df["worth"].astype(float)
@@ -575,7 +579,8 @@ def calculate_bidding_curve(
         except ValueError:
             raise ValueError("Column 'volume' not numeric and cannot be converted!")
 
-    calc_per_location = "location" in df.columns
+    has_location = "location" in df.columns
+    calc_per_location = has_location and df["location"].nunique() > 1
     for col in list(df.columns):
         if col == "location":
             continue
