@@ -3,6 +3,9 @@
 # SPDX-License-Identifier: MIT
 
 from battery_utility_calculator.storage import Storage as Storage
+from battery_utility_calculator.electric_vehicle import (
+    ElectricVehicle as ElectricVehicle,
+)
 from battery_utility_calculator.energy_costs_calculator import (
     EnergyCostCalculator as EnergyCostCalculator,
 )

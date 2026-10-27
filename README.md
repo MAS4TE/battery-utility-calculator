@@ -141,6 +141,45 @@ set are rejected with `ValueError`.
 `community_market_prices` defaults to `None` (no community market). Pass a dict keyed by
 location name when community trading should be modelled, for example `{"aachen": pd.Series(...)}`.
 
+## Electric vehicles
+
+A household can own an electric vehicle, modelled as a flexible load (it is never offered on a
+market). Pass it as `electric_vehicle=` to `EnergyCostCalculator`, `calculate_storage_worth`,
+`calculate_multiple_storage_worth`, `calculate_multiple_storage_worth_by_location` or
+`calculate_storage_worth_distribution`. The EV belongs to the household in the baseline and in every
+storage run, so the worth shows how a storage serves a household *with* that car. `demand` is then
+the household load **without** EV charging; `electric_vehicle=None` (default) leaves results unchanged.
+
+```py
+from battery_utility_calculator import ElectricVehicle
+
+ev = ElectricVehicle(
+    id="car",
+    capacity_kwh=50,
+    max_charge_kw=11,
+    availability=availability,        # share of the step plugged in at home, 0..1, same index as demand
+    driving_consumption=driving_kw,   # kW drawn while driving, only where availability < 1
+    max_discharge_kw=0.0,             # > 0 enables vehicle-to-home (home demand only)
+    initial_soc=0.5,                  # end SOC must be >= initial SOC
+    min_soc=0.1,
+    min_departure_soc=0.8,            # at the last available step before each departure
+    public_charging_price=0.59,       # EUR/kWh slack for driving energy bought elsewhere; None = off
+)
+```
+
+- SOC (kWh, end of step): `soc[t] = soc[t-1] + eta_c * charge[t] - (driving[t] - public[t]) - v2h[t] / eta_d`,
+  with `soc[-1] = initial_soc * capacity` and `min_soc * capacity <= soc <= capacity`.
+- `charge` comes from PV, the supplier, the `home` bucket of the storage and (if
+  `allow_community_to_home`) the community market, priced and charged with grid fees like the
+  household demand; `charge <= availability * max_charge_kw * hours_per_timestep`, the same for V2H.
+- A departure is a step with `availability > 0` followed by `availability == 0`.
+- Without `public_charging_price`, a driving profile that cannot be served even by charging at full
+  power whenever the car is home raises a `ValueError` when the calculator is built. With it, public
+  charging shows up as the extra cashflow key `ev_public_charging`.
+- Results: `get_ev_timeseries_df()`, `get_ev_kpis()`, EV columns in `get_energy_flows()`,
+  `output_results()["electric_vehicle"]`, `discharged_by_sink_kwh["ev"]` in the storage KPIs, and
+  `*_ev_soc_ts` keys from the worth helpers when `return_soc_timeseries=True`.
+
 ## Notes about the optimizer
 
 The core optimizer is `EnergyCostCalculator` (in `battery_utility_calculator/energy_costs_calculator.py`).

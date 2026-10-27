@@ -11,6 +11,7 @@ from plotly.graph_objects import Figure
 
 from battery_utility_calculator import EnergyCostCalculator as ECC
 from battery_utility_calculator import Storage
+from battery_utility_calculator.electric_vehicle import ElectricVehicle
 
 DEFAULT_GRID_FEE_BETWEEN_LOCATIONS = {
     "juelich": {
@@ -70,6 +71,7 @@ def calculate_storage_worth(
     goal: str = "max_cashflow",
     discharge_penalty_per_kwh: float = 1e-6,
     cycle_cost_per_kwh: float = 0.0,
+    electric_vehicle: ElectricVehicle | None = None,
     return_charge_timeseries: bool = False,
     return_soc_timeseries: bool = False,
     return_cashflows: bool = False,
@@ -107,6 +109,9 @@ def calculate_storage_worth(
             candidate storage. Default is False.
         cycle_cost_per_kwh (float, optional): Optional degradation cost in EUR per
             discharged kWh. Default is 0.0.
+        electric_vehicle (ElectricVehicle | None, optional): Electric vehicle of the household,
+            used in the baseline and in every storage run alike, so the worth reflects how the
+            storage serves a household with that EV. ``demand`` excludes EV charging. Defaults to None.
         solver (str, optional): Which solver to use. Defaults to "gurobi".
 
     Returns:
@@ -144,6 +149,7 @@ def calculate_storage_worth(
         goal=goal,
         discharge_penalty_per_kwh=discharge_penalty_per_kwh,
         cycle_cost_per_kwh=cycle_cost_per_kwh,
+        electric_vehicle=electric_vehicle,
     )
     baseline_cashflow = baseline_ecc.optimize(solver=solver)
 
@@ -176,6 +182,7 @@ def calculate_storage_worth(
         goal=goal,
         discharge_penalty_per_kwh=discharge_penalty_per_kwh,
         cycle_cost_per_kwh=cycle_cost_per_kwh,
+        electric_vehicle=electric_vehicle,
     )
     to_calc_cashflow = to_calc_ecc.optimize(solver=solver)
 
@@ -197,6 +204,9 @@ def calculate_storage_worth(
             storage_soc = to_calc_ecc.get_storage_soc_timeseries_df()
             result["baseline_soc_ts"] = baseline_soc
             result["storage_to_calc_soc_ts"] = storage_soc
+            if electric_vehicle is not None:
+                result["baseline_ev_soc_ts"] = baseline_ecc.get_ev_timeseries_df()
+                result["storage_to_calc_ev_soc_ts"] = to_calc_ecc.get_ev_timeseries_df()
 
         if return_cashflows:
             baseline_cf = baseline_ecc.get_cashflows()
@@ -239,6 +249,7 @@ def calculate_multiple_storage_worth(
     goal: str = "max_cashflow",
     discharge_penalty_per_kwh: float = 1e-6,
     cycle_cost_per_kwh: float = 0.0,
+    electric_vehicle: ElectricVehicle | None = None,
     return_charge_timeseries: bool = False,
     return_soc_timeseries: bool = False,
     return_cashflows: bool = False,
@@ -273,6 +284,9 @@ def calculate_multiple_storage_worth(
         return_cashflows (bool, optional): If True, returns dict with cashflow results for each storage. Defaults to False.
         cycle_cost_per_kwh (float, optional): Optional degradation cost in EUR per
             discharged kWh. Default is 0.0.
+        electric_vehicle (ElectricVehicle | None, optional): Electric vehicle of the household,
+            used in the baseline and in every storage run alike, so the worth reflects how the
+            storage serves a household with that EV. ``demand`` excludes EV charging. Defaults to None.
         check_timeseries (bool, optional): Wether to check time series. Defaults to True.
         solver (str, optional): Which solver to use. Defaults to "gurobi".
 
@@ -333,6 +347,7 @@ def calculate_multiple_storage_worth(
         goal=goal,
         discharge_penalty_per_kwh=discharge_penalty_per_kwh,
         cycle_cost_per_kwh=cycle_cost_per_kwh,
+        electric_vehicle=electric_vehicle,
     )
     baseline_cashflow = baseline_ecc.optimize(solver=solver)
 
@@ -340,6 +355,8 @@ def calculate_multiple_storage_worth(
         baseline_charge = baseline_ecc.get_storage_charge_timeseries_df()
     if return_soc_timeseries:
         baseline_soc = baseline_ecc.get_storage_soc_timeseries_df()
+        if electric_vehicle is not None:
+            baseline_ev_soc = baseline_ecc.get_ev_timeseries_df()
     if return_cashflows:
         baseline_cashflows = baseline_ecc.get_cashflows()
 
@@ -372,6 +389,7 @@ def calculate_multiple_storage_worth(
 
     storages_charge = {}
     storages_soc = {}
+    storages_ev_soc = {}
     storages_cashflows = {}
     for storage in storages_to_calculate:
         ecc = ECC(
@@ -402,6 +420,7 @@ def calculate_multiple_storage_worth(
             goal=goal,
             discharge_penalty_per_kwh=discharge_penalty_per_kwh,
             cycle_cost_per_kwh=cycle_cost_per_kwh,
+            electric_vehicle=electric_vehicle,
         )
         cashflow = ecc.optimize(solver=solver)
         storage_worth = cashflow - baseline_cashflow
@@ -428,6 +447,8 @@ def calculate_multiple_storage_worth(
             storages_charge[storage.id] = ecc.get_storage_charge_timeseries_df()
         if return_soc_timeseries:
             storages_soc[storage.id] = ecc.get_storage_soc_timeseries_df()
+            if electric_vehicle is not None:
+                storages_ev_soc[storage.id] = ecc.get_ev_timeseries_df()
         if return_cashflows:
             storages_cashflows[storage.id] = ecc.get_cashflows()
 
@@ -440,6 +461,9 @@ def calculate_multiple_storage_worth(
         if return_soc_timeseries:
             out["baseline_soc_ts"] = baseline_soc
             out["storages_to_calc_soc_ts"] = storages_soc
+            if electric_vehicle is not None:
+                out["baseline_ev_soc_ts"] = baseline_ev_soc
+                out["storages_to_calc_ev_soc_ts"] = storages_ev_soc
         if return_cashflows:
             out["baseline_cashflows"] = baseline_cashflows
             out["storages_to_calc_cashflows"] = storages_cashflows
@@ -477,6 +501,7 @@ def calculate_multiple_storage_worth_by_location(
     goal: str = "max_cashflow",
     discharge_penalty_per_kwh: float = 1e-6,
     cycle_cost_per_kwh: float = 0.0,
+    electric_vehicle: ElectricVehicle | None = None,
     return_charge_timeseries: bool = False,
     return_soc_timeseries: bool = False,
     return_cashflows: bool = False,
@@ -489,6 +514,8 @@ def calculate_multiple_storage_worth_by_location(
 
     ``rented_pv_grid_fee`` is passed through unchanged; since the tenant perspective is
     fixed here, setting it charges PV kept for home use at that rate in every location.
+
+    ``electric_vehicle`` is passed through unchanged; the EV stays at the household.
     """
     rows = []
     for location in locations_to_calculate:
@@ -521,6 +548,7 @@ def calculate_multiple_storage_worth_by_location(
             goal=goal,
             discharge_penalty_per_kwh=discharge_penalty_per_kwh,
             cycle_cost_per_kwh=cycle_cost_per_kwh,
+            electric_vehicle=electric_vehicle,
             return_charge_timeseries=return_charge_timeseries,
             return_soc_timeseries=return_soc_timeseries,
             return_cashflows=return_cashflows,
@@ -660,6 +688,8 @@ _CASHFLOW_COMPONENT_ORDER = (
     "wholesale",
     "grid_fees",
 )
+# present only when an electric vehicle is modelled
+_OPTIONAL_CASHFLOW_COMPONENTS = ("ev_public_charging",)
 
 
 def plot_multiple_storage_worth_cashflows(
@@ -701,10 +731,20 @@ def plot_multiple_storage_worth_cashflows(
     for sid, cf in stor_cf.items():
         _validate_cashflow_dict(cf, f"storages_to_calc_cashflows[{sid!r}]")
 
+    components = list(_CASHFLOW_COMPONENT_ORDER) + [
+        comp
+        for comp in _OPTIONAL_CASHFLOW_COMPONENTS
+        if comp in baseline_cf or any(comp in cf for cf in stor_cf.values())
+    ]
+
     rows: list[dict] = []
     rows.extend(
-        {"scenario": "Baseline", "component": comp, "EUR": float(baseline_cf[comp])}
-        for comp in _CASHFLOW_COMPONENT_ORDER
+        {
+            "scenario": "Baseline",
+            "component": comp,
+            "EUR": float(baseline_cf.get(comp, 0.0)),
+        }
+        for comp in components
     )
 
     for _, row in results_df.iloc[1:].iterrows():
@@ -721,14 +761,14 @@ def plot_multiple_storage_worth_cashflows(
             scen = f"id={sid}"
         cf = stor_cf[sid]
         rows.extend(
-            {"scenario": scen, "component": comp, "EUR": float(cf[comp])}
-            for comp in _CASHFLOW_COMPONENT_ORDER
+            {"scenario": scen, "component": comp, "EUR": float(cf.get(comp, 0.0))}
+            for comp in components
         )
 
     long = pd.DataFrame(rows)
     long["component"] = pd.Categorical(
         long["component"],
-        categories=list(_CASHFLOW_COMPONENT_ORDER),
+        categories=components,
         ordered=True,
     )
 
@@ -741,7 +781,7 @@ def plot_multiple_storage_worth_cashflows(
         color="component",
         title=fig_title,
         barmode=barmode,
-        category_orders={"component": list(_CASHFLOW_COMPONENT_ORDER)},
+        category_orders={"component": components},
     )
     fig.update_layout(xaxis_title=None, legend_title_text="Market")
     fig.update_xaxes(tickangle=-25)
@@ -753,6 +793,7 @@ def plot_multiple_storage_worth_cashflows(
 
 def _validate_cashflow_dict(cf: dict, label: str) -> None:
     expected = set(_CASHFLOW_COMPONENT_ORDER)
-    if set(cf.keys()) != expected:
+    keys = set(cf.keys()) - set(_OPTIONAL_CASHFLOW_COMPONENTS)
+    if keys != expected:
         msg = f"{label} must have keys {sorted(expected)}, got {sorted(cf.keys())}"
         raise ValueError(msg)
