@@ -236,7 +236,12 @@ def _disturb(base: pd.Series, noise: np.ndarray, relative_std: float, kind: str)
     else:
         # absolute shift derived from the mean magnitude, which keeps working
         # for prices at or below zero
-        scale = relative_std * float(np.abs(values).mean())
+        # community prices may carry NaN for timesteps without trading: those
+        # stay NaN and are left out of the mean, so they do not spread to the
+        # other timesteps
+        known = ~np.isnan(values)
+        mean_magnitude = float(np.abs(values[known]).mean()) if known.any() else 0.0
+        scale = relative_std * mean_magnitude
         disturbed = values + scale * noise
 
     return pd.Series(disturbed, index=base.index, name=base.name)
@@ -309,10 +314,14 @@ def sample_scenarios(
         "eeg_prices": eeg_prices,
         "wholesale_market_prices": wholesale_market_prices,
     }
+    community_names = []
     if community_market_prices is not None:
         for location, series in community_market_prices.items():
-            base_series[f"community_market_prices['{location}']"] = series
-    index = check_identical_indices(base_series)
+            name = f"community_market_prices['{location}']"
+            base_series[name] = series
+            community_names.append(name)
+    # NaN in the community prices marks timesteps without trading
+    index = check_identical_indices(base_series, allow_nan=community_names)
 
     standard_deviations = dict(DEFAULT_RELATIVE_STD)
     if relative_std is not None:

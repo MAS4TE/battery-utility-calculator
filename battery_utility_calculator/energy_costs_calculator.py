@@ -4,6 +4,7 @@
 
 import logging
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -90,7 +91,7 @@ class EnergyCostCalculator:
             All model flow variables and storage_level use kWh per timestep.
             supplier_prices (pd.Series): The grid prices for the optimization. Values should be in EUR per kWh. Index has to be pd.DateTimeIndex.
             eeg_prices (pd.Series): The EEG prices for the optimization. Values should be in EUR per kWh. Index has to be pd.DateTimeIndex.
-            community_market_prices (dict[str, pd.Series] | None): Community market prices per location. ``None`` or an empty dict disables the community market (flows indexed by ``my_location`` at zero). Otherwise keys must be present in ``grid_fee_between_locations``. Values in EUR per kWh with pd.DateTimeIndex.
+            community_market_prices (dict[str, pd.Series] | None): Community market prices per location. ``None`` or an empty dict disables the community market (flows indexed by ``my_location`` at zero). Otherwise keys must be present in ``grid_fee_between_locations``. Values in EUR per kWh with pd.DateTimeIndex. NaN marks a timestep without trading at that location: every flow from and to that community market is fixed to zero there.
             wholesale_market_prices (pd.Series): The wholesale market prices for the optimization. Values should be in EUR per kWh. Index has to be pd.DateTimeIndex.
             hours_per_timestep (int | float): Duration of each timestep in hours (e.g. 0.25 for 15 minutes). Used to convert kW inputs to kWh and to cap storage charge/discharge energy per step.
             is_rented_storage (bool): If True, grid fees apply to tenant flows when using someone else's storage (buyer). If False, only external imports into storage are charged (storage provider / seller); then ``storage_location`` must equal ``my_location``. Imports from a community market straight to the home bypass the storage and are charged in both cases.
@@ -160,6 +161,9 @@ class EnergyCostCalculator:
             self.__prepare_community_market_prices__(community_market_prices)
         )
         self.has_community_market = bool(self.community_market_prices)
+        # timesteps per location in which the community market does not trade,
+        # filled from the NaN in the prices while the indices are checked
+        self.community_trading_blocked: dict[str, list[int]] = {}
         self.allow_supplier_to_storage = True
         if self.storage_location != self.my_location:
             self.allow_supplier_to_storage = False
@@ -289,6 +293,11 @@ class EnergyCostCalculator:
                     domain=pyo.NonNegativeReals,
                 ),
             )
+            # no trading where the community price is NaN
+            variable = getattr(self.model, var_name)
+            for location, timesteps in self.community_trading_blocked.items():
+                for timestep in timesteps:
+                    variable[timestep, location].fix(0)
         else:
             setattr(
                 self.model,
@@ -407,10 +416,19 @@ class EnergyCostCalculator:
                             ref_index, series.index, "demand", label
                         )
                     )
-                check_finite(series, label)
+                # NaN marks a timestep in which this market does not trade
+                check_finite(series, label, allow_nan=True)
 
                 series.index = new_index
-                prepared_community[location] = series
+                blocked = series.isna()
+                self.community_trading_blocked[location] = [
+                    timestep
+                    for timestep, is_blocked in enumerate(blocked)
+                    if is_blocked
+                ]
+                # the flows are fixed to zero there, but the price still enters
+                # the objective as a coefficient, so it must not stay NaN
+                prepared_community[location] = series.fillna(0.0)
             self.community_market_prices = prepared_community
 
         h = self.hours_per_timestep
@@ -1167,6 +1185,9 @@ class EnergyCostCalculator:
         }
         if self.has_community_market:
             for location, series in self.community_market_prices.items():
+                # report the timesteps without trading as NaN again, as given
+                series = series.copy()
+                series.iloc[self.community_trading_blocked.get(location, [])] = np.nan
                 price_columns[f"community_market_prices_{location}"] = series
 
         price_df = pd.DataFrame(price_columns)

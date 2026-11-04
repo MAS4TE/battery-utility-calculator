@@ -813,3 +813,31 @@ def test_plot_bidding_curve_validates_quantiles():
 
     with pytest.raises(ValueError, match=r"within \[0, 1\]"):
         plot_bidding_curve_with_bands(curves, quantiles=(-0.1, 0.9), show=False)
+
+
+def test_community_nan_survives_sampling_and_stays_local():
+    inputs = flat_inputs(idx_long)
+    community = inputs["community_market_prices"]["aachen"].copy()
+    community.iloc[[3, 100]] = np.nan
+    inputs["community_market_prices"] = {"aachen": community}
+
+    scenarios = sample_scenarios(**inputs, n_scenarios=5, seed=0)
+
+    for scenario in scenarios:
+        sampled = scenario.community_market_prices["aachen"]
+        assert sampled.isna().sum() == 2
+        assert sampled.iloc[[3, 100]].isna().all()
+    # the gaps must not spread into the noise scale of the other timesteps
+    known = np.concatenate(
+        [s.community_market_prices["aachen"].dropna().to_numpy() for s in scenarios]
+    )
+    assert np.isfinite(known).all()
+    assert known.std() > 0
+
+
+def test_nan_outside_the_community_market_is_rejected_when_sampling():
+    inputs = flat_inputs(idx_3)
+    inputs["supplier_prices"] = pd.Series([0.3, np.nan, 0.3], index=idx_3)
+
+    with pytest.raises(ValueError, match="supplier_prices"):
+        sample_scenarios(**inputs, n_scenarios=1, seed=0)

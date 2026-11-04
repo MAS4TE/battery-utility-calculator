@@ -26,6 +26,11 @@ All timeseries are `pandas.Series` and **must share one identical `pd.DatetimeIn
 and every series inside `community_market_prices`. A non-datetime index raises `TypeError`,
 a mismatched one raises `ValueError`.
 
+Values have to be finite: NaN or `inf` in any series raises `ValueError`. The one
+exception is NaN in `community_market_prices`, which marks a timestep without community
+trading (see [Locations and grid fees](#locations-and-grid-fees)); `inf` is rejected there
+as well.
+
 - `demand` and `solar_generation` are powers in kW; they are converted internally to
   kWh per timestep using `hours_per_timestep`.
 - All prices are in EUR per kWh.
@@ -141,6 +146,24 @@ set are rejected with `ValueError`.
 `community_market_prices` defaults to `None` (no community market). Pass a dict keyed by
 location name when community trading should be modelled, for example `{"aachen": pd.Series(...)}`.
 
+A NaN in one of these series means that this community market does not trade in that
+timestep, for example because it did not clear. All flows from and to that location are
+then fixed to zero there: `pv_to_community`, `storage_to_community`,
+`community_to_storage_for_home`, `community_to_storage_for_community` and
+`community_to_home`. The block applies per location, so other community markets keep
+trading in the same timestep. `get_price_df()` reports these timesteps as NaN again.
+
+```py
+community_market_prices = {
+    # no community trading in Aachen at t=1
+    "aachen": pd.Series([0.15, np.nan, 0.15], index=index),
+}
+```
+
+Do not use NaN to mark faulty data. A NaN in the community prices is not reported as an
+error: it is read as "no trading" and changes the result. A gap in any other series still
+raises.
+
 ## Notes about the optimizer
 
 The core optimizer is `EnergyCostCalculator` (in `battery_utility_calculator/energy_costs_calculator.py`).
@@ -214,7 +237,8 @@ scenarios around the base timeseries and solve each of them.
 
 - `sample_scenarios(...)` — draws scenarios by adding correlated, persistent noise to
   the base timeseries. Returns `Scenario` objects; `scenario.to_ecc_kwargs()` feeds
-  straight into the optimizer.
+  straight into the optimizer. NaN in the community prices stays NaN in every scenario,
+  so a timestep without community trading stays one.
 - `calculate_storage_worth_distribution(...)` — solves every scenario, one row per
   scenario and storage.
 - `summarize_worth_distribution(...)` — mean, spread and quantiles per storage size.
