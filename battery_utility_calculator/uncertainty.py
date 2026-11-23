@@ -30,6 +30,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # imported from the module rather than the package to avoid an import cycle
+from battery_utility_calculator.electric_vehicle import ElectricVehicle
 from battery_utility_calculator.storage import Storage
 from battery_utility_calculator.timeseries import check_identical_indices
 
@@ -408,6 +409,7 @@ def calculate_storage_worth_distribution(
     goal: str = "max_cashflow",
     discharge_penalty_per_kwh: float = 1e-6,
     cycle_cost_per_kwh: float = 0.0,
+    electric_vehicle: ElectricVehicle | None = None,
     solver: str = "gurobi",
 ) -> pd.DataFrame:
     """Calculate the storage worth once per scenario (wait-and-see).
@@ -422,6 +424,9 @@ def calculate_storage_worth_distribution(
         baseline_storage: The baseline storage to compare against.
         storages_to_calculate: Storages to evaluate in every scenario.
         scenarios: Scenarios to run, e.g. from :func:`sample_scenarios`.
+        electric_vehicle: Electric vehicle of the household, used unchanged in every
+            scenario (its profiles are not disturbed). Its index has to match the
+            scenario timeseries.
         solver: Which solver to use. Defaults to "gurobi".
 
     All remaining arguments are passed to ``calculate_multiple_storage_worth``
@@ -473,6 +478,7 @@ def calculate_storage_worth_distribution(
             goal=goal,
             discharge_penalty_per_kwh=discharge_penalty_per_kwh,
             cycle_cost_per_kwh=cycle_cost_per_kwh,
+            electric_vehicle=electric_vehicle,
             solver=solver,
         )
         worth_df.insert(0, "scenario", position)
