@@ -12,6 +12,8 @@ from a file or a database - are reported as different on pandas 2.x. Comparing
 the values instead keeps the check on what actually matters.
 """
 
+from collections.abc import Collection
+
 import numpy as np
 import pandas as pd
 
@@ -88,28 +90,43 @@ def describe_index_mismatch(
     return "\n".join(lines)
 
 
-def check_finite(series: pd.Series, name: str) -> None:
+def check_finite(series: pd.Series, name: str, allow_nan: bool = False) -> None:
     """Reject NaN and inf in an input timeseries.
 
     A NaN in a price series becomes a coefficient of the objective, and no solver
     reports that back: HiGHS answers "optimal" with an objective of nan, or hangs
     outright as soon as the storage variables are not fixed to zero by a volume of
     0. So the values are checked where the indices are checked.
+
+    Args:
+        series: The timeseries to check.
+        name: Name of the series for the error message.
+        allow_nan: Accept NaN and reject only inf. Meant for series in which a gap
+            has a meaning of its own, such as community market prices, where NaN
+            marks a timestep without trading. The caller then has to keep the NaN
+            out of the model.
     """
-    invalid = ~np.isfinite(series.to_numpy(dtype=float))
+    values = series.to_numpy(dtype=float)
+    invalid = np.isinf(values) if allow_nan else ~np.isfinite(values)
     if invalid.any():
+        kind = "infinite" if allow_nan else "NaN or infinite"
         raise ValueError(
-            f"{name} contains {int(invalid.sum())} NaN or infinite values, the first "
+            f"{name} contains {int(invalid.sum())} {kind} values, the first "
             f"at {series.index[invalid.argmax()]}. Fill or drop them before optimizing."
         )
 
 
-def check_identical_indices(series_by_name: dict[str, pd.Series]) -> pd.Index:
+def check_identical_indices(
+    series_by_name: dict[str, pd.Series],
+    allow_nan: Collection[str] = (),
+) -> pd.Index:
     """Validate that every series shares one datetime index and return it.
 
     Args:
         series_by_name: Series keyed by the name to use in error messages. The
             first entry acts as the reference.
+        allow_nan: Names of the series in which NaN is accepted, see
+            ``check_finite``.
 
     Returns:
         The index of the first series.
@@ -131,6 +148,6 @@ def check_identical_indices(series_by_name: dict[str, pd.Series]) -> pd.Index:
                 )
             )
             raise ValueError(msg)
-        check_finite(series, name)
+        check_finite(series, name, allow_nan=name in allow_nan)
 
     return reference.index

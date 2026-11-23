@@ -26,6 +26,11 @@ All timeseries are `pandas.Series` and **must share one identical `pd.DatetimeIn
 and every series inside `community_market_prices`. A non-datetime index raises `TypeError`,
 a mismatched one raises `ValueError`.
 
+Values have to be finite: NaN or `inf` in any series raises `ValueError`. The one
+exception is NaN in `community_market_prices`, which marks a timestep without community
+trading (see [Locations and grid fees](#locations-and-grid-fees)); `inf` is rejected there
+as well.
+
 - `demand` and `solar_generation` are powers in kW; they are converted internally to
   kWh per timestep using `hours_per_timestep`.
 - All prices are in EUR per kWh.
@@ -253,7 +258,8 @@ scenarios around the base timeseries and solve each of them.
 
 - `sample_scenarios(...)` — draws scenarios by adding correlated, persistent noise to
   the base timeseries. Returns `Scenario` objects; `scenario.to_ecc_kwargs()` feeds
-  straight into the optimizer.
+  straight into the optimizer. NaN in the community prices stays NaN in every scenario,
+  so a timestep without community trading stays one.
 - `calculate_storage_worth_distribution(...)` — solves every scenario, one row per
   scenario and storage.
 - `summarize_worth_distribution(...)` — mean, spread and quantiles per storage size.

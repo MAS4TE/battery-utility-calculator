@@ -1762,3 +1762,112 @@ def test_ECC_rented_pv_grid_fee_without_home_use_case_is_zero():
 
     assert np.isclose(flows["pv_to_storage_for_eeg"].sum(), 2.0)
     assert np.isclose(calc.get_cashflows()["grid_fees"], 0.0)
+
+
+def community_gap_calculator(**overrides) -> EnergyCostCalculator:
+    """Community market cheaper than the supplier, but closed in the middle hour."""
+    kwargs = dict(
+        storage=None,
+        eeg_prices=pd.Series([0.0, 0.0, 0.0], index=idx_3),
+        wholesale_market_prices=pd.Series([0.0, 0.0, 0.0], index=idx_3),
+        community_market_prices=community_prices(idx_3, values=[0.05, np.nan, 0.05]),
+        supplier_prices=pd.Series([0.30, 0.30, 0.30], index=idx_3),
+        solar_generation=pd.Series([0.0, 0.0, 0.0], index=idx_3),
+        demand=pd.Series([1.0, 1.0, 1.0], index=idx_3),
+        allow_pv_to_wholesale=False,
+    )
+    kwargs.update(overrides)
+    return EnergyCostCalculator(**kwargs)
+
+
+def test_ECC_community_nan_blocks_buying_in_that_timestep():
+    calculator = community_gap_calculator()
+    costs = calculator.optimize(solver="appsi_highs")
+    coverage = calculator.get_demand_coverage_timeseries_df()
+
+    assert np.isfinite(costs)
+    assert coverage["from_community"].tolist() == pytest.approx([1.0, 0.0, 1.0])
+    assert coverage["from_grid"].tolist() == pytest.approx([0.0, 1.0, 0.0])
+    assert np.isclose(costs, -(0.05 + 0.30 + 0.05))
+
+
+def test_ECC_community_nan_blocks_selling_in_that_timestep():
+    calculator = community_gap_calculator(
+        solar_generation=pd.Series([1.0, 1.0, 1.0], index=idx_3),
+        demand=pd.Series([0.0, 0.0, 0.0], index=idx_3),
+        community_market_prices=community_prices(idx_3, values=[0.10, np.nan, 0.10]),
+    )
+    calculator.optimize(solver="appsi_highs")
+    pv_usage = calculator.get_solar_generation_timeseries_df()
+
+    assert pv_usage["to_community"].tolist() == pytest.approx([1.0, 0.0, 1.0])
+
+
+def test_ECC_community_nan_blocks_every_storage_flow():
+    # the community bucket would buy cheap and sell dear right across the gap;
+    # neither leg may land in the blocked hour
+    calculator = community_gap_calculator(
+        storage=Storage(
+            id=0, c_rate=1, volume=1, charge_efficiency=1, discharge_efficiency=1
+        ),
+        demand=pd.Series([0.0, 0.0, 0.0], index=idx_3),
+        community_market_prices=community_prices(idx_3, values=[np.nan, 0.01, np.nan]),
+        storage_use_cases=["community", "home"],
+    )
+    calculator.optimize(solver="appsi_highs")
+    flows = calculator.get_energy_flows()
+
+    for column in ("storage_to_community", "community_to_storage"):
+        assert flows[column].iloc[0] == 0.0
+        assert flows[column].iloc[2] == 0.0
+    for var_name in (
+        "pv_to_community",
+        "storage_to_community",
+        "community_to_storage_for_home",
+        "community_to_storage_for_community",
+        "community_to_home",
+    ):
+        variable = getattr(calculator.model, var_name)
+        assert variable[0, "aachen"].fixed
+        assert not variable[1, "aachen"].fixed
+        assert variable[2, "aachen"].fixed
+
+
+def test_ECC_community_nan_is_per_location():
+    calculator = community_gap_calculator(
+        community_market_prices={
+            "aachen": pd.Series([0.05, np.nan, 0.05], index=idx_3),
+            "juelich": pd.Series([0.05, 0.05, 0.05], index=idx_3),
+        },
+        grid_fee_between_locations={
+            "aachen": {"juelich": 0.0},
+            "juelich": {"aachen": 0.0},
+        },
+    )
+    calculator.optimize(solver="appsi_highs")
+    coverage = calculator.get_demand_coverage_timeseries_df()
+
+    assert coverage["from_community_aachen"].iloc[1] == 0.0
+    assert np.isclose(coverage["from_community_juelich"].iloc[1], 1.0)
+
+
+def test_ECC_community_nan_is_reported_in_the_price_df():
+    calculator = community_gap_calculator()
+    prices = calculator.get_price_df()["community_market_prices_aachen"]
+
+    assert np.isnan(prices.iloc[1])
+    assert prices.iloc[[0, 2]].tolist() == pytest.approx([0.05, 0.05])
+
+
+def test_ECC_community_inf_is_still_rejected():
+    with pytest.raises(ValueError, match="infinite"):
+        community_gap_calculator(
+            community_market_prices=community_prices(idx_3, values=[0.05, np.inf, 0.05])
+        )
+
+
+def test_ECC_nan_outside_the_community_market_is_still_rejected():
+    with pytest.raises(ValueError, match="supplier_prices contains 1 NaN"):
+        community_gap_calculator(
+            supplier_prices=pd.Series([0.30, np.nan, 0.30], index=idx_3)
+        )
